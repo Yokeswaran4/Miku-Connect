@@ -1,0 +1,45 @@
+THIRD-PARTY NOTICES
+===================
+Miku Connect is built on the open-source software below. Thank you to every
+author and contributor. Each component remains under its own license.
+
+DESKTOP APP (Linux / Windows)
+-----------------------------
+Electron ............. MIT ........ (c) GitHub Inc. and Electron contributors / OpenJS Foundation
+                                    https://www.electronjs.org
+  includes Chromium ... BSD-3-Clause and others, (c) The Chromium Authors
+  includes Node.js .... MIT and others, (c) Node.js contributors
+ws (WebSocket) ....... MIT ........ (c) Einar Otto Stangvik, Arnout Kazemier, Luigi Pinca and contributors
+                                    https://github.com/websockets/ws
+electron-builder ..... MIT ........ build tool only, not shipped inside the app
+                                    https://www.electron.build
+dbus-monitor (D-Bus) . AFL-2.1 or GPL-2.0-or-later. Optional external tool used on Linux to read
+                                    desktop notifications. It is not bundled; the system's copy is used.
+
+ANDROID APP
+-----------
+Java-WebSocket ....... MIT ........ (c) Nathan Rajlich and contributors
+                                    https://github.com/TooTallNate/Java-WebSocket
+Kotlin + kotlinx.coroutines
+                       Apache-2.0 .. (c) JetBrains s.r.o. and Kotlin contributors
+Jetpack Compose (UI, Material 3, Material Icons), AndroidX Core KTX, Activity Compose, Lifecycle
+                       Apache-2.0 .. (c) The Android Open Source Project / Google LLC
+Android Open Source Project (the platform APIs the app runs on)
+                       Apache-2.0
+Android Gradle Plugin and Gradle (build tools only)
+                       Apache-2.0
+
+LICENSE TEXTS
+-------------
+MIT License: permission is granted, free of charge, to any person obtaining a copy of the software
+and associated documentation files, to deal in the software without restriction, including the
+rights to use, copy, modify, merge, publish, distribute, sublicense and/or sell copies, subject to
+the copyright notice and this permission notice being included in all copies or substantial
+portions. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. The full text is in
+the "MIT License" section of this app.
+
+Apache License 2.0: full text at https://www.apache.org/licenses/LICENSE-2.0
+BSD-3-Clause: full text at https://opensource.org/license/bsd-3-clause
+GPL-2.0 / AFL-2.1 (D-Bus): https://www.freedesktop.org/wiki/Software/dbus/
+
+Miku Connect itself: MIT OR GPL-3.0-or-later (see LICENSE).
