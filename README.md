@@ -1,5 +1,6 @@
 <div align="center">
 
+
 # Miku Connect
 
 **Keep your Android phone and Linux or Windows computer in sync over your local network. No cloud. No account.**
@@ -136,6 +137,8 @@ Closing the desktop window hides it in the system tray; choose **Quit** from the
    ```
 
 The app requires Android 10 or newer (API 29). A JDK 17 Android build environment is recommended.
+
+When installing the APK outside Google Play, Play Protect may show a warning or block installation. Keep Play Protect enabled: confirm the APK came from the official Releases page, compare its SHA-256 checksum with the value in the v1.0 release notes, and review the permissions Android requests. If Play Protect still blocks the APK, do not bypass the warning; cancel installation and wait for a verified build or contact the author.
 
 ## Pairing your devices
 
