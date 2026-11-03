@@ -20,7 +20,7 @@ The name, icon, and other branding are temporary. I plan to refresh them and pub
 
 ## Releases
 
-Get the latest Android and desktop builds from **[Miku Connect Releases](https://github.com/Yokeswaran4/Miku-Connect/releases)**. For builds from source, see [Building the desktop app](#building-the-desktop-app) and [Building the Android app](#building-the-android-app).
+Get the latest Android and desktop builds from **[Miku Connect Releases](https://github.com/Yokeswaran4/Miku-Connect/releases)**. Read the [v1.0 release notes](RELEASE_NOTES_v1.0.md) for build details, setup steps, and checksums. For builds from source, see [Building the desktop app](#building-the-desktop-app) and [Building the Android app](#building-the-android-app).
 
 ## Table of contents
 
