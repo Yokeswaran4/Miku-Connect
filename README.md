@@ -16,6 +16,8 @@ If you find an issue, feel free to [contact me](https://discord.com/users/895560
 
 So far, the app has been tested on Android and Arch Linux, using GNOME and niri on Wayland. Starting with future releases, I plan to test on Arch Linux rolling, Windows 11, Android 16, and Debian 13 as well.
 
+The name, icon, and other branding are temporary. I plan to refresh them and publish the updated branding within the next three releases.
+
 ## Releases
 
 Get the latest Android and desktop builds from **[Miku Connect Releases](https://github.com/Yokeswaran4/Miku-Connect/releases)**. For builds from source, see [Building the desktop app](#building-the-desktop-app) and [Building the Android app](#building-the-android-app).
