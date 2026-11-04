@@ -1,0 +1,68 @@
+{
+  "name": "y-connect",
+  "version": "1.1.0",
+  "description": "Y Connect - notification, clipboard and file sync between your devices over WLAN",
+  "main": "main.js",
+  "author": "Yokeswaran N",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/transfer.test.js",
+    "dist:linux": "npx --yes electron-builder@^26.15.0 --linux AppImage",
+    "dist:win": "npx --yes electron-builder@^26.15.0 --win nsis portable"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1"
+  },
+  "build": {
+    "appId": "com.yokeswaran.yconnect",
+    "productName": "Y Connect",
+    "files": [
+      "main.js",
+      "preload.js",
+      "transfer.js",
+      "remote.js",
+      "battery.js",
+      "autostart.js",
+      "deviceinfo.js",
+      "latency.js",
+      "notifwatch.js",
+      "renderer/**",
+      "build/icon.png",
+      "licenses/**"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility",
+      "icon": "build/icon.png",
+      "artifactName": "Y-Connect-v1.1.${ext}",
+      "syncDesktopName": true
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "artifactName": "Y-Connect-Setup-v1.1.${ext}"
+    },
+    "portable": {
+      "artifactName": "Y-Connect-Portable-v1.1.${ext}"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "electron": true
+  },
+  "desktopName": "y-connect.desktop"
+}
