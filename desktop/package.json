@@ -7,7 +7,7 @@
   "license": "GPL-3.0-or-later",
   "scripts": {
     "start": "electron .",
-    "test": "node test/transfer.test.js",
+    "test": "node test/transfer.test.js && node test/updates.test.js",
     "dist:linux": "npx --yes electron-builder@^26.15.0 --linux AppImage",
     "dist:win": "npx --yes electron-builder@^26.15.0 --win nsis portable"
   },
@@ -29,6 +29,8 @@
       "autostart.js",
       "deviceinfo.js",
       "latency.js",
+      "legacy.js",
+      "updates.js",
       "notifwatch.js",
       "renderer/**",
       "build/icon.png",

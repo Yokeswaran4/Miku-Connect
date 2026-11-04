@@ -18,7 +18,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // Compose is much slower without R8 optimisation (and in debug builds), so release shrinks and optimises.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // personal builds: sign with the debug key so the APK installs without setting up a keystore
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

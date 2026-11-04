@@ -19,9 +19,10 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * "About this device": model, CPU, Android version, skin / launcher / window system.
- * Used by the About page and the debug report. It leaves out the device name, serial numbers,
- * Android ID, IP addresses and the pairing code.
+ * "About this device". The About page only shows [brief] (model, Android version, app version: cheap Build fields,
+ * no processes started). The long list from [collect] (CPU, skin, launcher, window modes ...) is kept for the
+ * debug report, which is built on demand. Neither contains the device name, serial numbers, Android ID,
+ * IP addresses or the pairing code.
  */
 object DeviceInfo {
     data class Section(val title: String, val rows: List<Pair<String, String>>)
@@ -99,7 +100,17 @@ object DeviceInfo {
         return listOfNotNull(model(), "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})", soc ?: Build.HARDWARE).joinToString(" · ")
     }
 
-    /** Blocking (runs getprop and reads /proc): call from a background thread. */
+    /** The few lines the About page shows. Only reads Build fields, so it is safe to call while composing. */
+    fun brief(ctx: Context): List<Pair<String, String>> {
+        val ver = try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (_: Exception) { null }
+        return listOf(
+            "Device" to model(),
+            "Android" to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            "Y Connect" to (ver ?: "?"),
+        )
+    }
+
+    /** Full details for the debug report. Blocking (runs getprop and reads /proc): call from a background thread. */
     fun collect(ctx: Context): List<Section> {
         val pm = ctx.packageManager
         val app = try { pm.getPackageInfo(ctx.packageName, 0) } catch (_: Exception) { null }

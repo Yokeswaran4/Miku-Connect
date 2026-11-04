@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -107,7 +106,7 @@ private fun DrawScope.drawLatency(l: LatencyStats?, color: Color, lost: Color, s
  * the average / best / worst / jitter / loss numbers and a "Ping ×5" test.
  */
 @Composable
-internal fun LatencyPanel(id: String) {
+internal fun LatencyPanel(id: String, address: String? = null) {
     val cs = MaterialTheme.colorScheme
     val all by Latency.stats.collectAsState()
     val l = all[id]
@@ -129,11 +128,10 @@ internal fun LatencyPanel(id: String) {
             Spacer(Modifier.width(8.dp))
             Dim(q.label)
             Spacer(Modifier.weight(1f))
-            Canvas(Modifier.width(80.dp).height(22.dp)) { drawLatency(l, q.color, cs.error, 2.5f) }
-            Spacer(Modifier.width(8.dp))
-            Text(if (open) "▴" else "▾", color = cs.onSurfaceVariant)
+            Dim(if (open) "Hide details ▴" else "Details ▾")
         }
         if (open) {
+            if (address != null) Dim("Address · $address")
             var selTime by remember(id) { mutableStateOf<Long?>(null) }
             val latest by rememberUpdatedState(l)
             val sel = selTime

@@ -18,13 +18,15 @@ Notifications · Clipboard · File transfer · Battery status · Remote commands
 
 Hi, I'm Yokeswaran N, an 18-year-old student. I made Y Connect, inspired by [KDE Connect](https://invent.kde.org/network/kdeconnect-kde). I hope to add more features over time.
 
-If you find an issue, feel free to contact me on [Discord](https://discord.com/users/895560596064464956) or [Reddit](https://www.reddit.com/user/yokesswaran_n), or [report it on GitHub](https://github.com/Yokeswaran4/Y-Connect/issues). You can also browse the [source repository](https://github.com/Yokeswaran4/Y-Connect) or get the latest builds from [Releases](https://github.com/Yokeswaran4/Y-Connect/releases).
+If you find an issue, feel free to contact me on [Discord](https://discord.com/users/895560596064464956) or [Reddit](https://www.reddit.com/user/yokeswaran_n), or [report it on GitHub](https://github.com/Yokeswaran4/Y-Connect/issues). You can also browse the [source repository](https://github.com/Yokeswaran4/Y-Connect) or get the latest builds from [Releases](https://github.com/Yokeswaran4/Y-Connect/releases).
 
 So far, the app has been tested on Android and Arch Linux, using GNOME and niri on Wayland. Testing on Arch Linux rolling, Windows 11, Android 16 and Debian 13 is planned for future releases; those environments are not claimed as tested yet.
 
+**Website:** the project page lives in [`docs/`](docs/) and is served with GitHub Pages (Settings → Pages → Deploy from a branch → `/docs`).
+
 ## Table of contents
 
-1. [What's new in v1.1](#whats-new-in-v11)
+1. [What's new](#whats-new)
 2. [Overview](#overview)
 3. [Features](#features)
 4. [Screenshots](#screenshots)
@@ -44,32 +46,21 @@ So far, the app has been tested on Android and Arch Linux, using GNOME and niri 
 18. [Troubleshooting](#troubleshooting)
 19. [Theming](#theming)
 20. [Project structure](#project-structure)
-21. [Release history](#release-history)
-22. [Tech stack and credits](#tech-stack-and-credits)
-23. [Made with AI](#made-with-ai)
-24. [License](#license)
-25. [Contact](#contact)
+21. [Tech stack and credits](#tech-stack-and-credits)
+22. [Made with AI](#made-with-ai)
+23. [License](#license)
+24. [Contact](#contact)
 
 ---
 
-## What's new in v1.1
+## What's new
 
-- **New name and logo.** Miku Connect is now **Y Connect**, with a new icon on every platform (including an adaptive icon on Android).
-- **GPL-only licensing.** The project is now licensed under **GPL-3.0-or-later** only. The MIT option was removed (third-party components keep their own licenses).
-- **Contact links.** Instagram was removed; **Reddit** was added next to Discord.
-- **No more "wrong pairing code" messages.** A message from a device that uses a different code is now ignored silently instead of being logged and shown as a warning.
-- **More reliable Android notification forwarding.** The notification listener asks Android to bind it again if the system unbinds it, reads more kinds of notification text (inbox and big-text styles), cannot be stopped by a single odd notification, and the Activity page shows a "Notification sent" entry.
-- **Better app icons in forwarded notifications.** The desktop now searches all installed icon themes and Flatpak icon folders, and falls back to the app's `.desktop` entry, so more notifications arrive with the right icon.
-- **Clipboard on Wayland.** When `wl-clipboard` is installed, the Linux app uses it, because Wayland blocks background apps from reading or setting the clipboard through Electron.
-- **AppImage integration.** When started from an AppImage, the app creates its own menu entry and icon (no root needed), so docks and launchers show the correct icon.
-- **Protocol identifiers renamed.** v1.1 devices cannot discover or pair with v1.0 devices. See [Upgrading from Miku Connect v1.0](#upgrading-from-miku-connect-v10).
-
-### Upgrading from Miku Connect v1.0
-
-- **Update every device.** The discovery identifier and the key-derivation salt changed with the rename, so v1.0 and v1.1 devices do not see each other.
-- **Android installs as a new app.** The package name changed to `com.yokeswaran.yconnect`, so Android treats Y Connect as a different app. Uninstall Miku Connect after installing the new one. Settings and pairing do not carry over, so pair your devices again.
-- **Desktop settings start fresh.** The app name changed, so Electron uses a new user-data folder. Remove an old launch-on-startup entry (`~/.config/autostart/miku-connect.desktop` on Linux) if you used one.
-- **Received files** now go to `Downloads/YConnect/` instead of `Downloads/MikuConnect/`.
+- **Android animations.** Tabs slide and fade in the direction you move, cards rise in one after another, counters roll when their number changes, the bottom bar icon pops when selected, and the logo spins in on start. Only graphics layers are animated, so it stays smooth on slower phones. Back gestures use Android's predictive back animation.
+- **Leftovers from the old name are cleaned up.** The desktop app removes old menu entries, startup entries and icons and refreshes the icon cache. The Android app shows an *Uninstall* card on the Devices page if the old app is still installed.
+- **Check for updates.** Android: *About → Updates*. Linux and Windows: *Settings → About & updates*. "Check now" asks GitHub for the latest release. The switch **Notify me about new releases** (off by default) checks about once a day and shows one notification per new version. This is the only feature that uses the internet; it sends nothing about you or your devices.
+- **Smoother Android UI.** Cards no longer animate one by one with springs; tabs use a quick fade. Below-the-fold cards load a moment after the page, and the slow start-up work (key derivation, sockets) runs off the main thread.
+- **Shorter "About this device".** Only device, system and app version are shown. CPU, build and other details are added to the debug report when you copy or share it.
+- **Website.** Interactive preview (pair, send files, run commands), live latest-release panel with a version checker, FAQ, expandable feature cards.
 
 ## Overview
 
@@ -95,7 +86,7 @@ Y Connect links Android phones, Linux computers and Windows computers on the sam
 
 ## Screenshots
 
-The sample screenshots below are included in the repository under [`assets/`](assets/). They were taken before the v1.1 rename, so they may still show the old name and logo.
+The sample screenshots below are included in the repository under [`assets/`](assets/).
 
 <details>
 <summary>Show Android and desktop screenshots</summary>
@@ -174,7 +165,7 @@ Notes:
 
 - Closing the window **hides it to the tray**. Choose **Quit** from the tray menu to stop the app.
 - Only one instance can run at a time.
-- Linux builds disable GPU acceleration and the Chromium sandbox to avoid blank windows and `/dev/shm` crashes on varied setups.
+- Linux builds disable GPU acceleration and the Chromium sandbox to avoid blank windows and `/dev/shm` crashes on varied setups. If the window feels slow, start Y Connect with `YCONNECT_GPU=1` (for example `YCONNECT_GPU=1 ./Y-Connect.AppImage`) to render on the GPU instead.
 - Started from an AppImage, the app writes `~/.local/share/applications/y-connect.desktop` and an icon under `~/.local/share/icons/` on every start so launchers and docks can match the window to its icon. If you move the AppImage, start it once from its new location.
 
 ### Android app
@@ -198,6 +189,8 @@ gradle wrapper --gradle-version 8.9    # once
 ```
 
 The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. Rename it to `Y-Connect-v1.1.apk` when you publish it.
+
+> **Smoothness:** debug builds are noticeably slower because Jetpack Compose isn't optimised in them. For day-to-day use, build the release variant instead (`gradle assembleRelease`, or **Build > Select Build Variant > release** in Android Studio). It is optimised with R8 and signed with the debug key so it installs directly. The APK is at `android/app/build/outputs/apk/release/app-release.apk`.
 
 If you use the **fish** shell, set variables with `set -x JAVA_HOME /path/to/jdk` instead of `export`.
 
@@ -372,7 +365,7 @@ Desktop settings are stored in `config.json` in Electron's user-data directory. 
 - Check that TCP **48998** and UDP **48999** are allowed through the firewall.
 - Guest Wi-Fi and AP/client isolation can block device discovery or connections. Try **Connect by IP** on a network that permits local traffic.
 - If pairing was missed, choose **I have a code** and enter the code shown on the other device.
-- If devices appear but nothing syncs, they probably use different pairing codes. Re-enter the same code on both devices. Check that every device runs v1.1; v1.0 devices cannot connect to v1.1.
+- If devices appear but nothing syncs, they probably use different pairing codes. Re-enter the same code on both devices. Check that every device runs the same Y Connect version.
 
 </details>
 
@@ -428,7 +421,7 @@ Desktop settings are stored in `config.json` in Electron's user-data directory. 
 ## Theming
 
 - **Windows and Linux:** follows the operating-system light/dark setting. Windows uses the system accent color when enabled; Linux uses the Y Connect blue.
-- **Android:** follows the system light/dark setting. Android 12+ uses Material You colors; Android 10–11 uses a Y Connect blue palette.
+- **Android:** follows the system light/dark setting and uses the same Y Connect look as the Linux and Windows apps by default. Android 12+ can switch to Material You wallpaper colors under **Settings**.
 
 ## Project structure
 
@@ -447,6 +440,7 @@ Y-Connect/
 │   ├── remote.js                   Remote command execution and safety checks
 │   ├── battery.js                  Battery reading (Linux sysfs / Windows Win32_Battery)
 │   ├── latency.js                  Ping/pong latency tracker
+│   ├── legacy.js                   Removes menu/startup entries and icons left by the old name
 │   ├── notifwatch.js               Linux: watches desktop notifications via dbus-monitor
 │   ├── autostart.js                Launch on startup (Windows login item / Linux XDG autostart)
 │   ├── deviceinfo.js               "About this device" and debug report
@@ -467,6 +461,7 @@ Y-Connect/
             ├── Ui.kt                              Main Compose UI (Devices, Files, Activity, Settings, About)
             ├── RunUi.kt / RemoteCommands.kt       "Run" tab and command protocol
             ├── LatencyUi.kt / Latency.kt          Latency graph and tracker
+            ├── LegacyApp.kt                       Finds a leftover copy of the old app so it can be uninstalled
             ├── Hub.kt                             Core: discovery, pairing, WebSocket, state
             ├── Crypto.kt                          PBKDF2 and AES-256-GCM
             ├── Transfers.kt                       File transfer, folders, resume
@@ -477,16 +472,6 @@ Y-Connect/
             ├── ClipboardSendActivity.kt           Reads the clipboard in the foreground, handles the Share menu
             └── DeviceInfo.kt                      About this device and debug report
 ```
-
-## Release history
-
-### v1.1
-
-New name (Y Connect) and logo, GPL-3.0-or-later licensing, Reddit contact link, silent handling of undecryptable messages, more reliable Android notification forwarding, better notification icons, Wayland clipboard support through `wl-clipboard`, and AppImage menu integration. See [What's new in v1.1](#whats-new-in-v11).
-
-### v1.0 (released as Miku Connect)
-
-First release for Android and desktop: clipboard sync, notification mirroring, file and folder transfer with resume, nearby-device discovery and pairing, battery and latency display, and optional remote commands. Tested on Android and Arch Linux (GNOME and niri on Wayland).
 
 ## Tech stack and credits
 
@@ -533,4 +518,4 @@ Third-party components remain under their own licenses; see [`THIRD-PARTY-NOTICE
 Questions, feedback or ideas?
 
 - **Discord:** [Message me on Discord](https://discord.com/users/895560596064464956)
-- **Reddit:** [u/yokesswaran_n](https://www.reddit.com/user/yokesswaran_n)
+- **Reddit:** [u/yokeswaran_n](https://www.reddit.com/user/yokeswaran_n)

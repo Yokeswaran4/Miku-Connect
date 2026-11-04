@@ -6,6 +6,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('yconnect', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getDeviceInfo: () => ipcRenderer.invoke('device-info'),
+  checkUpdate: () => ipcRenderer.invoke('check-update'),
   copyDebugReport: () => ipcRenderer.invoke('copy-debug-report'),
   saveDebugReport: () => ipcRenderer.invoke('save-debug-report'),
   pingNow: (id) => ipcRenderer.invoke('ping-now', id),
