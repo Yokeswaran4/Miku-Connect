@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 const setHtml = (el, h) => { if (el._h === h) return false; el._h = h; el.innerHTML = h; return true; }; // skip identical repaints
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let inited = false;
-let lastTrSig = null;
+let lastTrSig = null; let trFilter = 'all';
 let lastState = null;
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
 
@@ -236,9 +236,9 @@ function render(s) {
   const live = s.transfers.filter((t) => t.status === 'waiting' || t.status === 'active').length;
   setBadge($('bTr'), live);
   setStat('statTr', live);
-  const stLabel = (t) => ({ waiting: 'Waiting', active: 'Transferring', done: 'Complete', rejected: 'Declined', cancelled: 'Cancelled' }[t.status] || (t.canResume ? 'Paused' : 'Failed'));
-  const trBuild = () => s.transfers.length
-    ? s.transfers.map((t) => {
+  const stLabel = (t) => ({ waiting: 'Queued', active: 'Transferring', done: 'Complete', rejected: 'Declined', cancelled: 'Cancelled' }[t.status] || (t.canResume ? 'Paused' : 'Failed'));
+  const trMatch = (t) => trFilter === 'sent' ? t.dir === 'out' : trFilter === 'received' ? t.dir === 'in' : trFilter === 'queued' ? t.status === 'waiting' : true;   $('cAll').textContent = s.transfers.length;   $('cSent').textContent = s.transfers.filter((t) => t.dir === 'out').length;   $('cRecv').textContent = s.transfers.filter((t) => t.dir === 'in').length;   $('cQueued').textContent = s.transfers.filter((t) => t.status === 'waiting').length;   const trList = s.transfers.filter(trMatch);   const trBuild = () => trList.length
+    ? trList.map((t) => {
         const isLive = t.status === 'waiting' || t.status === 'active';
         const pct = t.size > 0 ? Math.min(100, Math.round((t.done / t.size) * 100)) : (t.status === 'done' ? 100 : 0);
         const st = ['waiting', 'active', 'done', 'rejected', 'cancelled'].includes(t.status) ? t.status : (t.canResume ? 'paused' : 'failed');
@@ -247,11 +247,11 @@ function render(s) {
           + (isLive ? `<div class="bar"><div style="width:${pct}%"></div></div>` : '')
           + `<div class="tr-st"><span class="pillst">${esc(stLabel(t))}</span><span class="sttxt">${esc(statusText(t))}</span></div></div>`;
       }).join('')
-    : `<div class="card empty"><div class="em-ic">${ic('transfers')}</div><b>No transfers yet</b><span class="s">Use “Send file” or “Send folder” on a device, or drop files onto it.</span></div>`;
+    : s.transfers.length       ? `<div class="card empty"><div class="em-ic">${ic('transfers')}</div><b>No ${trFilter} transfers</b><span class="s">Nothing here right now.</span></div>`       : `<div class="card empty"><div class="em-ic">${ic('transfers')}</div><b>No transfers yet</b><span class="s">Use “Send file” or “Send folder” on a device, or drop files onto it.</span></div>`;
   // while only progress changes, update the numbers in place (no rebuild, so the bar glides)
-  const trSig = s.transfers.map((t) => t.id + ':' + t.status + ':' + (t.canResume ? 1 : 0)).join('|');
-  if (s.transfers.length && trSig === lastTrSig) {
-    for (const t of s.transfers) {
+  const trSig = trFilter + '#' + trList.map((t) => t.id + ':' + t.status + ':' + (t.canResume ? 1 : 0)).join('|');
+  if (trList.length && trSig === lastTrSig) {
+    for (const t of trList) {
       const el = $('transfers').querySelector(`.tr[data-tid="${t.id}"]`);
       if (!el) continue;
       const pct = t.size > 0 ? Math.min(100, Math.round((t.done / t.size) * 100)) : (t.status === 'done' ? 100 : 0);
@@ -366,7 +366,7 @@ $('btnConnect').onclick = async () => {
 };
 
 // --- file transfer ---
-$('btnOpenDl').onclick = () => window.yconnect.openDownloads();
+$('btnOpenDl').onclick = () => window.yconnect.openDownloads(); $('trFilter').addEventListener('click', (e) => {   const b = e.target.closest('button[data-f]');   if (!b) return;   trFilter = b.dataset.f;   for (const x of $('trFilter').children) x.classList.toggle('on', x === b);   lastTrSig = null;   if (lastState) render(lastState); });
 $('btnClearTr').onclick = () => window.yconnect.clearTransfers();
 $('transfers').addEventListener('click', (e) => {
   const b = e.target.closest('.cancelbtn');
