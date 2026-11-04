@@ -20,8 +20,6 @@ Hi, I'm Yokeswaran N, an 18-year-old student. I made Y Connect, inspired by [KDE
 
 If you find an issue, feel free to contact me on [Discord](https://discord.com/users/895560596064464956) or [Reddit](https://www.reddit.com/user/yokeswaran_n), or [report it on GitHub](https://github.com/Yokeswaran4/Y-Connect/issues). You can also browse the [source repository](https://github.com/Yokeswaran4/Y-Connect) or get the latest builds from [Releases](https://github.com/Yokeswaran4/Y-Connect/releases).
 
-
-
 **Website:** the project page lives in [`docs/`](docs/) and is served with GitHub Pages (Settings → Pages → Deploy from a branch → `/docs`).
 
 ## Table of contents
