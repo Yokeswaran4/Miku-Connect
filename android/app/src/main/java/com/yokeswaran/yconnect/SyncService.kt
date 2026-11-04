@@ -39,6 +39,7 @@ class SyncService : Service() {
             startForeground(1, n)
         }
         Hub.ensureStarted(this)
+        Updates.autoCheck(this) // no-op unless the user turned on update notifications
         return START_STICKY
     }
 }

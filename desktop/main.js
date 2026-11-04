@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (c) 2026 Yokeswaran N
 'use strict';
-const { app, BrowserWindow, ipcMain, clipboard, Notification, Tray, Menu, nativeImage, nativeTheme, systemPreferences, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, net, clipboard, Notification, Tray, Menu, nativeImage, nativeTheme, systemPreferences, shell, dialog } = require('electron');
 
 // Linux stability: avoid /dev/shm crashes, Wayland+Vulkan clashes and blank windows from GPU issues
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('disable-dev-shm-usage');
   app.commandLine.appendSwitch('disable-features', 'Vulkan');
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
-  app.disableHardwareAcceleration();
+  // Software rendering is the safe default (avoids blank windows on odd GPU setups) but it is much slower.
+  // Start with YCONNECT_GPU=1 to use the GPU: smoother animations on most machines.
+  if (process.env.YCONNECT_GPU !== '1') app.disableHardwareAcceleration();
+  else app.commandLine.appendSwitch('enable-gpu-rasterization');
 }
 const path = require('path');
 const os = require('os');
@@ -21,6 +24,8 @@ const remote = require('./remote');
 const battery = require('./battery');
 const autostart = require('./autostart');
 const deviceinfo = require('./deviceinfo');
+const updates = require('./updates');
+const legacy = require('./legacy');
 const latency = require('./latency').create({
   ids: () => [...peers.keys()],
   send: (id, obj) => { const p = peers.get(id); if (p) sendTo(p.ws, obj); },
@@ -52,13 +57,15 @@ function integrateDesktop() {
     const icon = path.join(iconDir, 'y-connect.png');
     const src = fs.readFileSync(path.join(__dirname, 'build', 'icon.png'));
     let cur = null; try { cur = fs.readFileSync(icon); } catch {}
-    if (!cur || !cur.equals(src)) fs.writeFileSync(icon, src);
+    let iconChanged = false;
+    if (!cur || !cur.equals(src)) { fs.writeFileSync(icon, src); iconChanged = true; }
     const q = (x) => '"' + String(x).replace(/(["`$\\])/g, '\\$1') + '"';
     const entry = ['[Desktop Entry]', 'Type=Application', 'Name=Y Connect', 'Comment=Share notifications, clipboard and files between your devices',
       'Exec=' + q(process.env.APPIMAGE), 'Icon=' + icon, 'Terminal=false', 'Categories=Utility;Network;', 'StartupWMClass=y-connect', ''].join('\n');
     const file = path.join(appsDir, 'y-connect.desktop');
     let old = ''; try { old = fs.readFileSync(file, 'utf8'); } catch {}
-    if (old !== entry) fs.writeFileSync(file, entry);
+    if (old !== entry) { fs.writeFileSync(file, entry); iconChanged = true; }
+    if (iconChanged) legacy.refreshCaches(); // so the dock picks up the new icon without logging out
   } catch {}
 }
 
@@ -67,6 +74,7 @@ let key = null, config = null, lastClip = '', pushTimer = null;
 let logEntries = [];
 let autostartError = null; // { why, fix } when the last attempt to change launch-on-startup failed
 const startHidden = process.argv.includes('--hidden');
+let updateInfo = null;     // result of the last update check (shown in Settings)
 let myBattery = null;      // { level, charging } or null when this computer has no battery
 const peers = new Map();   // device id -> { ws, info }
 const pending = new Set(); // outgoing connections in progress
@@ -101,6 +109,9 @@ function loadConfig() {
     theme: 'system', // system | light | dark
     systemColors: true, // follow the OS accent colour; off = Y Connect blue
     ignored: [], // ids of devices that were unpaired: never auto-connect to them
+    autoUpdateCheck: false, // opt-in: look for a newer release about once a day and show a notification
+    lastUpdateCheck: 0,
+    notifiedVersion: '',
   }, saved);
   if (!Array.isArray(config.ignored)) config.ignored = [];
   if (!['system', 'light', 'dark'].includes(config.theme)) config.theme = 'system';
@@ -177,7 +188,7 @@ function accentColor() {
 }
 const bgColor = () => (nativeTheme.shouldUseDarkColors ? '#202020' : '#f3f3f3');
 function snapshot() {
-  return { config, peers: [...peers.values()].map((p) => ({ ...p.info, lat: latency.stats(p.info.id) })), nearby: nearbyList(), pairRequest, log: logEntries, ips: localIps(), version: VERSION_LABEL, accent: accentColor(), platform: process.platform, transfers: transfer.list(), autostart: { supported: autostart.supported, enabled: autostart.isEnabled(), hidden: config.startHidden !== false, error: autostartError } };
+  return { config, peers: [...peers.values()].map((p) => ({ ...p.info, lat: latency.stats(p.info.id) })), nearby: nearbyList(), pairRequest, log: logEntries, ips: localIps(), version: VERSION_LABEL, accent: accentColor(), platform: process.platform, update: updateInfo && updateInfo.newer ? updateInfo : null, transfers: transfer.list(), autostart: { supported: autostart.supported, enabled: autostart.isEnabled(), hidden: config.startHidden !== false, error: autostartError } };
 }
 function pushState() {
   if (pushTimer) return;
@@ -592,7 +603,7 @@ function createWindow(show = true) {
     show,
     width: 940, height: 660, minWidth: 720, minHeight: 520,
     backgroundColor: bgColor(), title: 'Y Connect', icon: ICON, autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: true },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.on('close', (e) => { if (tray && !app.isQuitting) { e.preventDefault(); win.hide(); } });
@@ -611,9 +622,9 @@ function createTray() {
 
 /* ---------- IPC ---------- */
 ipcMain.handle('state', () => snapshot());
-const ALLOWED_LINKS = new Set(['https://discord.com/users/895560596064464956', 'https://www.reddit.com/user/yokesswaran_n']);
+const ALLOWED_LINKS = new Set(['https://discord.com/users/895560596064464956', 'https://www.reddit.com/user/yokeswaran_n']);
 ipcMain.handle('open-external', (_e, url) => {
-  if (!ALLOWED_LINKS.has(url)) return false;
+  if (!ALLOWED_LINKS.has(url) && !updates.SAFE_URL.test(String(url))) return false;
   shell.openExternal(url);
   return true;
 });
@@ -647,6 +658,8 @@ ipcMain.handle('set-config', (_e, patch) => {
   if (typeof patch.batterySync === 'boolean') { config.batterySync = patch.batterySync; if (config.batterySync) sendBattery(); }
   if (typeof patch.allowCommands === 'boolean') config.allowCommands = patch.allowCommands;
   if (typeof patch.systemColors === 'boolean') config.systemColors = patch.systemColors;
+  const wantUpd = typeof patch.autoUpdateCheck === 'boolean' && patch.autoUpdateCheck && !config.autoUpdateCheck;
+  if (typeof patch.autoUpdateCheck === 'boolean') config.autoUpdateCheck = patch.autoUpdateCheck;
   if (['system', 'light', 'dark'].includes(patch.theme)) {
     config.theme = patch.theme;
     nativeTheme.themeSource = patch.theme;
@@ -655,6 +668,7 @@ ipcMain.handle('set-config', (_e, patch) => {
   saveConfig();
   if (norm(config.passphrase) !== oldPass) { config.ignored = []; saveConfig(); deriveKey(); closeAll(); addLog('info', 'Pairing code changed', 'Reconnecting…'); }
   else if (config.name !== oldName) broadcast(helloMsg());
+  if (wantUpd) checkForUpdates(true); // switched on: check right away so the result is visible
   pushState();
   return snapshot();
 });
@@ -678,8 +692,32 @@ ipcMain.handle('send-clipboard', async () => {
 });
 /* ---------- device info / debug report ---------- */
 const infoExtra = () => ({ label: VERSION_LABEL, startup: { enabled: autostart.isEnabled(), hidden: config.startHidden !== false }, tray: !!tray, battery: !!myBattery });
-ipcMain.handle('device-info', () => deviceinfo.collect(infoExtra()));
-const debugReport = async () => deviceinfo.toText(await deviceinfo.collect(infoExtra()), logEntries);
+// the Settings page only needs the short version, which is gathered once (it starts a few system commands)
+let infoCache = null;
+const loadInfo = () => infoCache || (infoCache = deviceinfo.collect(infoExtra()));
+ipcMain.handle('device-info', async () => ({ brief: (await loadInfo()).brief }));
+
+/* ---------- update check ---------- */
+async function checkForUpdates(notify) {
+  const r = await updates.check(VERSION_LABEL, (u, o) => net.fetch(u, o));
+  updateInfo = r;
+  if (r.ok) { config.lastUpdateCheck = Date.now(); saveConfig(); }
+  if (r.ok && r.newer) {
+    addLog('info', 'Update available', r.latest + ' is out (you have ' + VERSION_LABEL + ')');
+    if (notify && Notification.isSupported() && config.notifiedVersion !== r.latest) {
+      config.notifiedVersion = r.latest; saveConfig();
+      const n = new Notification({ title: 'Y Connect ' + r.latest + ' is available', body: 'Click to see what’s new and download it.', icon: ICON });
+      n.on('click', () => shell.openExternal(r.url));
+      n.show();
+    }
+  }
+  pushState();
+  return r;
+}
+ipcMain.handle('check-update', () => checkForUpdates(false));
+const autoCheckDue = () => config.autoUpdateCheck && Date.now() - (config.lastUpdateCheck || 0) > 24 * 3600 * 1000;
+
+const debugReport = async () => deviceinfo.toText(await deviceinfo.collect(infoExtra()), logEntries); // full details, built only when asked for
 ipcMain.handle('copy-debug-report', async () => {
   const t = await debugReport();
   lastClip = t; // so the clipboard watcher does not send the report to the other devices
@@ -701,6 +739,7 @@ app.on('second-instance', showWindow);
 app.on('before-quit', () => { app.isQuitting = true; });
 app.on('window-all-closed', () => { if (!tray) app.quit(); });
 app.whenReady().then(() => {
+  legacy.run(); // remove menu / startup entries and icons left by the previous name
   integrateDesktop();
   Menu.setApplicationMenu(null);
   loadConfig();
@@ -721,7 +760,9 @@ app.whenReady().then(() => {
   setInterval(pollClipboard, 700);
   startNotifWatch();
   pollBattery();
-  deviceinfo.collect(infoExtra()).then((i) => addLog('info', 'Device info', i.summary)).catch(() => {});
+  loadInfo().then((i) => addLog('info', 'Device info', i.summary)).catch(() => {});
+  setTimeout(() => { if (autoCheckDue()) checkForUpdates(true); }, 15000); // not during start-up
+  setInterval(() => { if (autoCheckDue()) checkForUpdates(true); }, 6 * 3600 * 1000);
   setInterval(pollBattery, 60000);
   setInterval(() => latency.tick(!!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized()), 2000);
   setInterval(() => {

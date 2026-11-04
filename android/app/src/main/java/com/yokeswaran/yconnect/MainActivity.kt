@@ -34,20 +34,24 @@ internal val OkGreen = Color(0xFF3FB26B)
 
 // Fallback palettes for Android 8-11 (Android 12+ uses Material You wallpaper colours instead).
 private val YConnectDark = darkColorScheme(
-    primary = Color(0xFF5AA5F0), onPrimary = Color(0xFF0B1F36),
+    primary = Color(0xFF5AA5F0), onPrimary = Color(0xFF04121F),
     primaryContainer = Color(0xFF1F4E82), onPrimaryContainer = Color(0xFFD3E5FF),
-    background = Color(0xFF0F0F16), onBackground = Color(0xFFE9EEFC),
-    surface = Color(0xFF0F0F16), onSurface = Color(0xFFE9EEFC),
-    surfaceContainer = Color(0xFF1A1A26), onSurfaceVariant = Color(0xFF8A93AD),
-    outline = Color(0xFF55607A), outlineVariant = Color(0xFF2A2A3C),
+    secondary = Color(0xFF9FB4D6), tertiary = Color(0xFFA855F7), onTertiary = Color(0xFF2A0F4A),
+    background = Color(0xFF0A0C12), onBackground = Color(0xFFF3F5FA),
+    surface = Color(0xFF0A0C12), onSurface = Color(0xFFF3F5FA),
+    surfaceVariant = Color(0xFF232837), surfaceContainer = Color(0xFF1B202C), onSurfaceVariant = Color(0xFF9AA3B5),
+    outline = Color(0xFF5B6680), outlineVariant = Color(0xFF272D3D),
+    error = Color(0xFFF87171),
 )
 private val YConnectLight = lightColorScheme(
-    primary = Color(0xFF2F6FB8), onPrimary = Color.White,
+    primary = Color(0xFF2563C4), onPrimary = Color.White,
     primaryContainer = Color(0xFFD3E5FF), onPrimaryContainer = Color(0xFF0B1F36),
-    background = Color(0xFFF7F9FE), onBackground = Color(0xFF1A1C22),
-    surface = Color(0xFFF7F9FE), onSurface = Color(0xFF1A1C22),
-    surfaceContainer = Color.White, onSurfaceVariant = Color(0xFF5A6275),
-    outline = Color(0xFF8A93AD), outlineVariant = Color(0xFFD7DCE8),
+    secondary = Color(0xFF52627E), tertiary = Color(0xFF7C3AED), onTertiary = Color.White,
+    background = Color(0xFFEEF1F8), onBackground = Color(0xFF161A26),
+    surface = Color(0xFFEEF1F8), onSurface = Color(0xFF161A26),
+    surfaceVariant = Color(0xFFDDE3F0), surfaceContainer = Color.White, onSurfaceVariant = Color(0xFF5B6475),
+    outline = Color(0xFF8A93AD), outlineVariant = Color(0xFFD5DBE9),
+    error = Color(0xFFC62828),
 )
 
 internal fun fmtSize(b: Long): String {
@@ -139,6 +143,7 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         Latency.uiVisible = true
+        Updates.autoCheck(this) // only does anything when "Notify me about new releases" is on
     }
 
     override fun onStop() {

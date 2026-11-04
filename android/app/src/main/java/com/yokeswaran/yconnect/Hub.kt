@@ -48,7 +48,7 @@ data class HubSettings(
     val notifySync: Boolean,
     val acceptFiles: Boolean = true,
     val theme: String = "system", // system | light | dark
-    val systemColors: Boolean = true, // Material You wallpaper colours (Android 12+); off = Y Connect blue
+    val systemColors: Boolean = false, // Material You wallpaper colours (Android 12+); off = Y Connect desktop look (default)
     val batterySync: Boolean = true,  // share this phone's battery and show the other devices'
     val autoClipboard: Boolean = false, // send the phone's clipboard automatically (needs "Display over other apps")
 )
@@ -108,28 +108,39 @@ object Hub {
             prefs.getBoolean("notif", true),
             prefs.getBoolean("files", true),
             prefs.getString("theme", "system") ?: "system",
-            prefs.getBoolean("syscolors", true),
+            prefs.getBoolean("syscolors", false),
             prefs.getBoolean("battery", true),
             prefs.getBoolean("autoclip", false),
         )
         settings.value = s
-        Transfers.cleanOldPartials()
-        addLog("info", "Device info", DeviceInfo.summary())
         RemoteCommands.load(appCtx)
         ignored.addAll(prefs.getStringSet("ignored", emptySet()) ?: emptySet())
-        key = Crypto.deriveKey(s.passphrase)
         appCtx.getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel("remote", "Notifications from your other devices", NotificationManager.IMPORTANCE_HIGH)
         )
-        try {
-            val wifi = appCtx.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            wifi.createMulticastLock("yconnect").apply { setReferenceCounted(false); acquire() }
-        } catch (_: Exception) {}
-        startServer()
-        startDiscovery()
-        startBattery()
-        Latency.start()
-        ClipboardWatcher.refresh(appCtx)
+        // Everything slow runs off the main thread so the first frame is not delayed:
+        // the key derivation (PBKDF2, 100,000 rounds), file clean-up, sockets and the battery receiver.
+        thread(isDaemon = true, name = "yconnect-init") {
+            try {
+                val code = s.passphrase
+                val k = Crypto.deriveKey(code)
+                // the user may already have changed the code while this was running: then updateSettings() owns the key
+                if (Crypto.normalize(settings.value.passphrase) == Crypto.normalize(code)) key = k
+                Transfers.cleanOldPartials()
+                addLog("info", "Device info", DeviceInfo.summary())
+                try {
+                    val wifi = appCtx.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                    wifi.createMulticastLock("yconnect").apply { setReferenceCounted(false); acquire() }
+                } catch (_: Exception) {}
+                startServer()
+                startDiscovery()
+                startBattery()
+                Latency.start()
+            } catch (e: Exception) {
+                addLog("warn", "Start-up problem", e.message ?: e.javaClass.simpleName)
+            }
+            main.post { ClipboardWatcher.refresh(appCtx) }
+        }
     }
 
     private fun randomCode(): String {
