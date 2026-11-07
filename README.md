@@ -20,7 +20,7 @@ Hi, I'm Yokeswaran N, an 18-year-old student. I made Y Connect, inspired by [KDE
 
 If you find an issue, feel free to contact me on [Discord](https://discord.com/users/895560596064464956) or [Reddit](https://www.reddit.com/user/yokeswaran_n), or [report it on GitHub](https://github.com/Yokeswaran4/Y-Connect/issues). You can also browse the [source repository](https://github.com/Yokeswaran4/Y-Connect) or get the latest builds from [Releases](https://github.com/Yokeswaran4/Y-Connect/releases).
 
-So far, the app has been tested on Android and Arch Linux, using GNOME and niri on Wayland. Testing on Arch Linux rolling, Windows 11, Android 16 and Debian 13 is planned for future releases; those environments are not claimed as tested yet.
+It is tested on Android, Arch linux, Debian 13 and Windows 11.
 
 **Website:** the project page lives in [`docs/`](docs/) and is served with GitHub Pages (Settings → Pages → Deploy from a branch → `/docs`).
 
