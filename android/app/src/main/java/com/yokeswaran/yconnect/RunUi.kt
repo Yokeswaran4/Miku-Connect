@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -72,6 +76,7 @@ fun RunPage(pad: PaddingValues) {
     var shell by rememberSaveable { mutableStateOf("default") }
     var timeout by rememberSaveable { mutableIntStateOf(30) }
     var toSave by remember { mutableStateOf<SavedCommand?>(null) }
+    var mode by rememberSaveable { mutableStateOf("terminal") }
 
     // current form as a SavedCommand (id/label are unused until it is saved)
     fun formEntry() = SavedCommand("", "", command.trim(), shell)
@@ -87,7 +92,7 @@ fun RunPage(pad: PaddingValues) {
         }
     }
 
-    Page("Run", "Run commands on your computers.", pad) {
+    Page("Run", "Terminal and commands on your computers.", pad) {
         Card("Computer") {
             if (computers.isEmpty()) {
                 Text("No Linux or Windows computer is connected", fontWeight = FontWeight.Bold)
@@ -105,7 +110,16 @@ fun RunPage(pad: PaddingValues) {
             }
         }
 
-        Card("Command") {
+        Card("Mode") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = mode == "terminal", onClick = { mode = "terminal" }, label = { Text("Terminal") })
+                FilterChip(selected = mode == "commands", onClick = { mode = "commands" }, label = { Text("One-off commands") })
+            }
+            Dim(if (mode == "terminal") "A shell that stays open: cd, variables and running programs carry over between lines." else "Run a single command, with saved and recent commands.")
+        }
+
+        if (mode == "terminal") TerminalCard(target)
+        if (mode == "commands") Card("Command") {
             val win = target?.platform == "windows"
             OutlinedTextField(
                 command, { command = it }, label = { Text("Command") },
@@ -121,18 +135,18 @@ fun RunPage(pad: PaddingValues) {
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Dim("Stop after")
-                listOf(30, 60, 120).forEach { s ->
+                listOf(30, 60, 120, 300, 600).forEach { s ->
                     FilterChip(selected = timeout == s, onClick = { timeout = s }, label = { Text("${s}s") })
                 }
             }
-            Dim("Runs as your normal user, starting in the home folder. Anything with sudo, su, runas or \"run as administrator\" is refused, and so is anything that deletes files (rm, del, rmdir, Remove-Item, find -delete). Programs that wait for typing never finish; use options that end by themselves.")
+            Dim("Runs as your normal user, starting in the home folder. Anything with sudo, su, runas or \"run as administrator\" is refused, and so is anything that deletes files (rm, del, rmdir, Remove-Item, find -delete). Programs that wait for typing never finish here; use the Terminal mode for those.")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { go(formEntry()) }, enabled = target != null && command.isNotBlank()) { Text("Run") }
                 OutlinedButton(onClick = { toSave = formEntry() }, enabled = command.isNotBlank()) { Text("Save") }
             }
         }
 
-        Card("Saved") {
+        if (mode == "commands") Card("Saved") {
             if (saved.isEmpty()) Dim("Commands you use often live here. Run something, then tap Save (or the Save next to it under Recent).")
             saved.forEach { c ->
                 Column(Modifier.fillMaxWidth()) {
@@ -150,7 +164,7 @@ fun RunPage(pad: PaddingValues) {
             }
         }
 
-        if (recent.isNotEmpty()) Card("Recent") {
+        if (mode == "commands" && recent.isNotEmpty()) Card("Recent") {
             recent.forEach { c ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { fill(c) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -163,7 +177,7 @@ fun RunPage(pad: PaddingValues) {
             TextButton(onClick = { RemoteCommands.clearRecent() }) { Text("Clear recent") }
         }
 
-        Card("Results") {
+        if (mode == "commands") Card("Results") {
             if (runs.isEmpty()) Dim("Nothing run yet. If something fails, this tells you why it happened and how to fix it.")
             runs.forEach { RunResult(it) }
             if (runs.any { it.status != "running" }) TextButton(onClick = { RemoteCommands.clearRuns() }) { Text("Clear results") }
@@ -199,13 +213,14 @@ private fun SaveDialog(c: SavedCommand, onDismiss: () -> Unit, onSave: (String) 
 @Composable
 private fun OutputBox(title: String, text: String, isError: Boolean) {
     val cs = MaterialTheme.colorScheme
-    Dim(title)
+    val shown = if (text.length > 200_000) text.takeLast(200_000) else text
+    Dim(if (shown.length < text.length) "$title (last 200 KB shown; Copy output has everything)" else title)
     Column(
         Modifier.fillMaxWidth().heightIn(max = 220.dp).clip(RoundedCornerShape(8.dp))
             .background(cs.surfaceContainer).verticalScroll(rememberScrollState()).padding(8.dp)
     ) {
         SelectionContainer {
-            Text(text, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = if (isError) cs.error else cs.onSurface)
+            Text(shown, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = if (isError) cs.error else cs.onSurface)
         }
     }
 }
@@ -237,7 +252,7 @@ private fun RunResult(e: RunEntry) {
         if (e.stdout.isNotEmpty()) OutputBox("Output", e.stdout, false)
         if (e.stderr.isNotEmpty()) OutputBox("Error output", e.stderr, true)
         if (e.stdout.isNotEmpty() || e.stderr.isNotEmpty()) TextButton(onClick = { copyText(ctx, (e.stdout + "\n" + e.stderr).trim()) }) { Text("Copy output") }
-        if (e.truncated) Dim("Output was cut after 48 KB.")
+        if (e.truncated) Dim("Output was cut after 512 KB per stream.")
         if (!running && !ok && e.code > 0) Dim("Exit code ${e.code}")
         e.error?.let { err ->
             Column(
@@ -250,6 +265,90 @@ private fun RunResult(e: RunEntry) {
                 Text("How to fix it", color = cs.onErrorContainer, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Text(err.fix, color = cs.onErrorContainer, fontSize = 13.sp)
             }
+        }
+    }
+}
+
+
+/** Interactive terminal on the selected computer: a dark screen, a line input, history and Ctrl+C. */
+@Composable
+private fun TerminalCard(target: Peer?) {
+    val cs = MaterialTheme.colorScheme
+    val ctx = LocalContext.current
+    val term by RemoteCommands.term.collectAsState()
+    val history by RemoteCommands.termHistory.collectAsState()
+    var line by rememberSaveable { mutableStateOf("") }
+    var shell by rememberSaveable { mutableStateOf("default") }
+    var histPos by remember { mutableIntStateOf(-1) }
+    val t = term
+    val live = t != null && t.status != "closed"
+    val screen = rememberScrollState()
+    LaunchedEffect(t?.text?.length) { screen.scrollTo(screen.maxValue) }
+
+    fun send() {
+        if (t?.status != "open") return
+        RemoteCommands.termSend(line)
+        line = ""; histPos = -1
+    }
+
+    Card("Terminal") {
+        val win = target?.platform == "windows"
+        if (win && !live) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = shell != "powershell", onClick = { shell = "default" }, label = { Text("Command Prompt") })
+            FilterChip(selected = shell == "powershell", onClick = { shell = "powershell" }, label = { Text("PowerShell") })
+        }
+        if (t == null) {
+            Dim("Opens a shell on ${target?.name ?: "the computer"} in its home folder. Type a line and send it; the output streams back live. Runs as your normal user: sudo, su, runas and anything that deletes files are refused, and a terminal nobody types in for 30 minutes is closed.")
+            Button(onClick = { target?.let { RemoteCommands.termOpen(it, shell) } ?: toast(ctx, "No computer connected") }, enabled = target != null) { Text("Open terminal") }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    when (t.status) { "opening" -> "Opening…"; "open" -> "● ${t.peer} · ${t.shell}"; else -> "Closed" },
+                    color = when (t.status) { "open" -> OkGreen; "opening" -> cs.primary; else -> cs.onSurfaceVariant },
+                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { RemoteCommands.termClose() }) { Text(if (live) "Close" else "Dismiss") }
+            }
+            Column(
+                Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 400.dp).clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF0E0F13)).verticalScroll(screen).padding(10.dp)
+            ) {
+                SelectionContainer {
+                    Text(
+                        t.text.ifEmpty { if (t.status == "opening") "Waiting for ${t.peer}…" else "" },
+                        fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp, color = Color(0xFFD7DAE0)
+                    )
+                }
+            }
+            if (t.status == "open") {
+                OutlinedTextField(
+                    line, { line = it; histPos = -1 }, placeholder = { Text("type a command, then Send") }, singleLine = true,
+                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp),
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false, imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = { send() }),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Button(onClick = { send() }) { Text("Send") }
+                    OutlinedButton(onClick = { RemoteCommands.termInterrupt() }) { Text("Ctrl+C") }
+                    OutlinedButton(onClick = { if (history.isNotEmpty()) { histPos = minOf(histPos + 1, history.size - 1); line = history[histPos] } }, enabled = history.isNotEmpty()) { Text("↑") }
+                    OutlinedButton(onClick = { if (histPos > 0) { histPos--; line = history[histPos] } else { histPos = -1; line = "" } }, enabled = histPos >= 0) { Text("↓") }
+                    OutlinedButton(onClick = { RemoteCommands.termClear() }) { Text("Clear") }
+                    OutlinedButton(onClick = { copyText(ctx, t.text.trim()) }, enabled = t.text.isNotBlank()) { Text("Copy") }
+                }
+            }
+            t.error?.let { err ->
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(cs.errorContainer).padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("Why this happened", color = cs.onErrorContainer, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(err.why, color = cs.onErrorContainer, fontSize = 13.sp)
+                    Text("How to fix it", color = cs.onErrorContainer, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(err.fix, color = cs.onErrorContainer, fontSize = 13.sp)
+                }
+            }
+            if (!live && target != null) Button(onClick = { RemoteCommands.termOpen(target, shell) }) { Text("Open again") }
         }
     }
 }

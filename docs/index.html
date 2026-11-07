@@ -13,7 +13,9 @@
 :root{--accent:#5aa5f0;--ac2:#a855f7;--on:#000;--bg:#0a0c12;--sf:rgba(30,35,48,.72);--sf2:rgba(44,50,66,.9);--line:rgba(255,255,255,.09);--line2:rgba(255,255,255,.18);--tx:#f3f5fa;--dim:#9aa3b5;--ok:#4ade80;--glow:.5;--ease:cubic-bezier(.2,.8,.2,1);--spring:cubic-bezier(.34,1.56,.64,1);color-scheme:dark}
 [data-theme=light]{--bg:#eef1f8;--sf:rgba(255,255,255,.82);--sf2:#fff;--line:rgba(20,30,60,.09);--line2:rgba(20,30,60,.18);--tx:#161a26;--dim:#5b6475;--ok:#15803d;--glow:.28;--accent:#2f6fd0;--on:#fff;color-scheme:light}
 *{box-sizing:border-box}html{scroll-behavior:smooth}
-body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 "Segoe UI Variable Text","Segoe UI",Inter,system-ui,Roboto,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 "Segoe UI Variable Text","Segoe UI",Inter,system-ui,Roboto,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden;overflow-wrap:break-word}
+html{overflow-x:hidden;-webkit-text-size-adjust:100%}
+img,svg,video{max-width:100%}
 svg{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 a{color:inherit}h1,h2,h3{line-height:1.15;margin:0}
 .bg{position:fixed;inset:0;pointer-events:none;z-index:-1;overflow:hidden}
@@ -36,8 +38,9 @@ nav.top .w{display:flex;align-items:center;gap:22px;height:64px}
 .btn:hover{transform:translateY(-2px);filter:brightness(1.08)}.btn:active{transform:scale(.96)}.btn svg{width:18px;height:18px}
 .btn.g{background:var(--sf);color:var(--tx);border-color:var(--line2);box-shadow:none}.btn.g:hover{border-color:var(--accent)}
 .btn.s{height:38px;padding:0 16px;font-size:14px;border-radius:11px}
-.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:30px;align-items:center;padding:70px 0 40px}
-.pill{display:inline-flex;gap:8px;align-items:center;padding:6px 14px;border-radius:99px;border:1px solid var(--line2);background:var(--sf);font-size:13px;color:var(--dim);margin-bottom:22px}
+.hero>*{min-width:0}
+.hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:30px;align-items:center;padding-block:70px 40px}
+.pill{max-width:100%;display:inline-flex;gap:8px;align-items:center;padding:6px 14px;border-radius:99px;border:1px solid var(--line2);background:var(--sf);font-size:13px;color:var(--dim);margin-bottom:22px}
 .pill i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok)}
 h1{font-size:clamp(38px,6vw,68px);letter-spacing:-1.6px;font-weight:800}
 .gr{background:linear-gradient(90deg,var(--accent),var(--ac2) 60%,#22d3ee);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -194,8 +197,29 @@ footer p{max-width:760px;margin:6px auto}
 .stp{min-height:3.2em;margin:18px auto 0;max-width:640px;text-align:center;color:var(--tx);font-size:16px}.stp code{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);padding:2px 8px;border-radius:8px;font-size:15px;letter-spacing:1px}
 /* phones: no blur, no drifting glow, lighter reveals */
 @media(hover:none),(max-width:900px){.orb{animation:none}.fc,.about,.sec div,.dl,.st,.rel,.faq details{backdrop-filter:none}nav.top{backdrop-filter:none;background:var(--bg)}.cp{backdrop-filter:none}.rv{transition:opacity .4s,transform .4s}.fc{transform:none!important}}
-@media(max-width:900px){.hero{grid-template-columns:1fr;padding-top:40px}.hv{order:-1;max-width:320px}.grid,.dls,.sec{grid-template-columns:1fr 1fr}.steps{grid-template-columns:1fr 1fr}.lk a:not(.keep){display:none}}
-@media(max-width:620px){.grid,.dls,.sec,.steps{grid-template-columns:1fr}.about{flex-direction:column;text-align:center}.about .l{justify-content:center}nav.top .w{gap:10px;padding-right:16px;padding-left:16px}.lk{gap:0}.lk a{padding:8px;font-size:13px;white-space:nowrap}.lk a.keep[href^="https://github.com"]{display:none}.ib{flex:none}.frame:not(.and) .nav{width:60px;padding:8px 6px}.frame:not(.and) .ni span{display:none}.frame:not(.and) .ni{justify-content:center;padding:0}.frame:not(.and){height:480px}.seg button{padding:10px 14px}}
+@media(max-width:900px){.hero{grid-template-columns:minmax(0,1fr);padding-block-start:40px}.hv{order:-1;max-width:320px}.grid,.dls,.sec{grid-template-columns:repeat(2,minmax(0,1fr))}.steps{grid-template-columns:repeat(2,minmax(0,1fr))}.lk a:not(.keep){display:none}}
+@media(max-width:620px){.grid,.dls,.sec,.steps{grid-template-columns:minmax(0,1fr)}.about{flex-direction:column;text-align:center}.about .l{justify-content:center}.frame:not(.and) .nav{width:60px;padding:8px 6px}.frame:not(.and) .ni span{display:none}.frame:not(.and) .ni{justify-content:center;padding:0}.frame:not(.and){height:480px}.seg button{padding:10px 14px}}
+@media(max-width:620px){
+.w{padding:0 16px}
+.dl code{white-space:normal;overflow-wrap:anywhere;max-width:100%}.dl{padding:22px}
+nav.top .w{gap:8px;height:58px}
+.br{font-size:16px;gap:8px;white-space:nowrap}.br img{width:30px;height:30px}
+.lk a{padding:8px 9px;font-size:13.5px}
+.ib{width:38px;height:38px;flex:none}
+.hero{padding-block:28px 24px;gap:18px}
+.pill{font-size:12px;padding:6px 12px;margin-bottom:16px}
+h1{font-size:clamp(30px,9.4vw,44px);letter-spacing:-.8px;line-height:1.12}
+.lead{font-size:16.5px;margin:16px 0 22px}
+.cta .btn{flex:1 1 100%;justify-content:center}
+.hv{max-width:260px}
+.sub{font-size:15px}
+section{padding:52px 0}
+.dls{gap:22px;margin-top:28px}.rel{padding:20px;margin-top:28px}.rel-h .btn{margin-left:0}
+.faq summary{padding:14px 0}.faq details{padding:0 16px}
+.seg{max-width:100%}.seg button{padding:9px 12px;font-size:14px}
+.chk{flex-wrap:wrap}.chk input{width:100%;min-width:0}
+}
+@media(max-width:380px){.br span,.br b{display:none}.lk a{padding:8px 7px}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}.rv{opacity:1;transform:none}.prog{display:none}}
 </style>
 </head>
@@ -228,7 +252,7 @@ footer p{max-width:760px;margin:6px auto}
 
 <header class="w hero" id="top">
   <div>
-    <span class="pill"><i></i><span id="pillV">v1.1</span> · GPL-3.0-or-later · No cloud, no account</span>
+    <span class="pill"><i></i><span id="pillV">v1.2</span> · GPL-3.0-or-later · No cloud, no account</span>
     <h1>Your phone and computer, <span class="gr">finally in sync.</span></h1>
     <p class="lead">Y Connect links your Android phone with your Linux or Windows computer over your local network. Share notifications, clipboard and files, with everything encrypted and staying on your Wi‑Fi.</p>
     <div class="cta">
@@ -260,11 +284,11 @@ footer p{max-width:760px;margin:6px auto}
     <div class="fc" role="button" tabindex="0" aria-expanded="false"><div class="ic"><svg><use href="#i-files"/></svg></div><h3>Files and folders</h3><p>Send anything in either direction with progress, cancel, safe filenames and automatic resume after a dropped connection.</p><p class="more">Folders are sent too. Every transfer can be cancelled, filenames are made safe, and an interrupted transfer continues on its own or with Resume. Received files go to Downloads/YConnect.</p><span class="tgl">More<svg><use href="#i-chev"/></svg></span></div>
     <div class="fc" role="button" tabindex="0" aria-expanded="false"><div class="ic"><svg><use href="#i-wifi"/></svg></div><h3>Auto discovery</h3><p>Devices find each other over UDP. On networks that block it, use Connect by IP.</p><p class="more">Devices announce themselves on UDP 48999 and connect over TCP 48998. Guest Wi‑Fi or router isolation can block discovery, so Connect by IP is always there as a fallback.</p><span class="tgl">More<svg><use href="#i-chev"/></svg></span></div>
     <div class="fc" role="button" tabindex="0" aria-expanded="false"><div class="ic"><svg><use href="#i-bat"/></svg></div><h3>Battery and latency</h3><p>See each device’s battery level and charging state, plus live latency, jitter and packet loss on the encrypted link.</p><p class="more">Latency is measured through the encrypted link, every 2 seconds while the app is open. Tap a device to see a graph with average, best, worst, jitter and packet loss.</p><span class="tgl">More<svg><use href="#i-chev"/></svg></span></div>
-    <div class="fc" role="button" tabindex="0" aria-expanded="false"><div class="ic"><svg><use href="#i-run"/></svg></div><h3>Remote commands</h3><p>Run commands on your Linux or Windows PC from your phone. Off by default, never elevated, with delete and sudo guard rails.</p><p class="more">Commands run as your normal user and stop after at most 2 minutes. Deleting files and sudo are always refused, and only phones paired with your code can ask.</p><span class="tgl">More<svg><use href="#i-chev"/></svg></span></div>
+    <div class="fc" role="button" tabindex="0" aria-expanded="false"><div class="ic"><svg><use href="#i-run"/></svg></div><h3>Remote terminal and commands</h3><p>Open a live terminal on your Linux or Windows PC from your phone, or run one-off commands. Off by default, never elevated, with delete and sudo guard rails.</p><p class="more">Commands run as your normal user and stop after at most 2 minutes. Deleting files and sudo are always refused, and only phones paired with your code can ask.</p><span class="tgl">More<svg><use href="#i-chev"/></svg></span></div>
   </div>
   <div class="sec">
     <div><b>AES‑256‑GCM</b><span>Messages and file data are encrypted end to end on your LAN.</span></div>
-    <div><b>PBKDF2‑SHA256</b><span>The key comes from your pairing code (100,000 iterations). The code is never sent over the network.</span></div>
+    <div><b>PBKDF2‑SHA256</b><span>The key comes from a random pairing code made for each pair of devices (100,000 iterations).</span></div>
     <div><b>TCP 48998 · UDP 48999</b><span>The only ports you may need to open in your firewall.</span></div>
   </div>
 </div></section>
@@ -274,7 +298,7 @@ footer p{max-width:760px;margin:6px auto}
   <div class="steps">
     <div class="st on" tabindex="0" data-s="0"><h3>Same network</h3><p>Put every device on the same Wi‑Fi or LAN and open Y Connect.</p></div>
     <div class="st" tabindex="0" data-s="1"><h3>Pick a device</h3><p>Open <b>Devices</b> and choose one under <b>Nearby devices</b>.</p></div>
-    <div class="st" tabindex="0" data-s="2"><h3>Read the code</h3><p>One device shows a pairing code, and the other asks you to enter it.</p></div>
+    <div class="st" tabindex="0" data-s="2"><h3>Accept</h3><p>The other device shows Accept or Decline. No code to type.</p></div>
     <div class="st" tabindex="0" data-s="3"><h3>Press Pair</h3><p>That’s it. Clipboard, notifications and files now flow between your devices.</p></div>
   </div>
   <p class="stp" id="stp" aria-live="polite"></p>
@@ -286,7 +310,7 @@ footer p{max-width:760px;margin:6px auto}
   <div class="faq" id="faq-list">
     <details><summary>Does Y Connect need the internet?</summary><p>No. Devices talk directly over your Wi‑Fi or LAN, with no cloud and no account. The one optional exception is checking for new releases: it asks GitHub for the latest version, sends nothing about you or your devices, and is off by default in the apps.</p></details>
     <details><summary>How do I find out about new versions?</summary><p>On Android open <b>About → Updates</b>, on Linux and Windows open <b>Settings → About &amp; updates</b>. Press <b>Check now</b>, or switch on <b>Notify me about new releases</b> to be told about once a day. You can also use the version checker in the <a href="#download" style="color:var(--accent)">Download</a> section on this page.</p></details>
-    <details><summary>Is my data encrypted?</summary><p>Yes. Messages and file data use AES‑256‑GCM, with a key derived from your pairing code using PBKDF2‑SHA256 (100,000 iterations). The code itself is never sent over the network.</p></details>
+    <details><summary>Is my data encrypted?</summary><p>Yes. Messages and file data use AES‑256‑GCM, with a key derived from a random pairing code created for each pair of devices using PBKDF2‑SHA256 (100,000 iterations). The code is handed over once, encrypted, when you tap Accept.</p></details>
     <details><summary>My phone doesn’t show up. What now?</summary><p>Make sure both devices are on the same network and that guest Wi‑Fi or router isolation isn’t blocking UDP discovery. Then use <b>Connect by IP</b>. You may need to allow TCP 48998 and UDP 48999 in your firewall.</p></details>
     <details><summary>Why does the Android app ask for battery and notification access?</summary><p>Notification access lets it forward notifications to your computer. Setting battery to <b>Unrestricted</b> stops Android from shutting down the background link.</p></details>
     <details><summary>Can the phone control my computer?</summary><p>Only if you turn on <b>Allow commands from phone</b> on the computer. It’s off by default, commands never run with administrator rights, and deleting files is always refused.</p></details>
@@ -294,18 +318,18 @@ footer p{max-width:760px;margin:6px auto}
 </div></section>
 
 <section id="download"><div class="w rv">
-  <div class="eb">Download</div><h2>Get Y Connect <span id="dlV">v1.1</span></h2>
+  <div class="eb">Download</div><h2>Get Y Connect <span id="dlV">v1.2</span></h2>
   <p class="sub">Update every device to the same version so they can find and pair with each other.</p>
     <div class="rel" id="rel">
     <div class="rel-h"><span class="tag">Latest release</span><b id="relVer">…</b><small id="relDate"></small><button class="btn s g" id="relBtn" type="button">Refresh</button></div>
     <p class="rel-n sk" id="relNotes">Loading the latest release from GitHub…</p>
     <div class="assets" id="assets"></div>
-    <form class="chk" id="chk" autocomplete="off"><label for="myV">Which version do you have?</label><input id="myV" placeholder="v1.1" inputmode="decimal" maxlength="16"><button class="btn s" type="submit">Check</button><output id="chkOut" for="myV"></output></form>
+    <form class="chk" id="chk" autocomplete="off"><label for="myV">Which version do you have?</label><input id="myV" placeholder="v1.2" inputmode="decimal" maxlength="16"><button class="btn s" type="submit">Check</button><output id="chkOut" for="myV"></output></form>
   </div>
   <div class="dls">
-    <div class="dl" data-os="and"><span class="tag">Android 10+</span><h3>Android</h3><p>Installable APK. Verify it came from the Releases page and check its SHA‑256 before installing.</p><code>Y-Connect-v1.1.apk</code><a class="btn s" data-get="and" href="https://github.com/Yokeswaran4/Y-Connect/releases/latest">Get the APK</a></div>
-    <div class="dl" data-os="lnx"><span class="tag">Linux x64</span><h3>Linux</h3><p>AppImage. Make it executable, then run it. On Wayland, install <code>wl-clipboard</code> for reliable clipboard sync.</p><div class="cmd" data-copy="chmod +x Y-Connect-v1.1.AppImage &amp;&amp; ./Y-Connect-v1.1.AppImage"><span>chmod +x *.AppImage</span><span>copy</span></div><a class="btn s" data-get="lnx" href="https://github.com/Yokeswaran4/Y-Connect/releases/latest">Get the AppImage</a></div>
-    <div class="dl" data-os="win"><span class="tag">Windows</span><h3>Windows</h3><p>Installer or portable build. Allow the firewall prompt on private networks the first time you launch it.</p><code>Setup-v1.1.exe · Portable-v1.1.exe</code><a class="btn s" data-get="win" href="https://github.com/Yokeswaran4/Y-Connect/releases/latest">Get the installer</a></div>
+    <div class="dl" data-os="and"><span class="tag">Android 10+</span><h3>Android</h3><p>Installable APK. Verify it came from the Releases page and check its SHA‑256 before installing.</p><code>Y-Connect-v1.2.apk</code><a class="btn s" data-get="and" href="https://github.com/Yokeswaran4/Y-Connect/releases/latest">Get the APK</a></div>
+    <div class="dl" data-os="lnx"><span class="tag">Linux x64</span><h3>Linux</h3><p>AppImage. Make it executable, then run it. On Wayland, install <code>wl-clipboard</code> for reliable clipboard sync.</p><div class="cmd" data-copy="chmod +x Y-Connect-v1.2.AppImage &amp;&amp; ./Y-Connect-v1.2.AppImage"><span>chmod +x *.AppImage</span><span>copy</span></div><a class="btn s" data-get="lnx" href="https://github.com/Yokeswaran4/Y-Connect/releases/latest">Get the AppImage</a></div>
+    <div class="dl" data-os="win"><span class="tag">Windows</span><h3>Windows</h3><p>Installer or portable build. Allow the firewall prompt on private networks the first time you launch it.</p><code>Setup-v1.2.exe · Portable-v1.2.exe</code><a class="btn s" data-get="win" href="https://github.com/Yokeswaran4/Y-Connect/releases/latest">Get the installer</a></div>
   </div>
   <p class="sub">Prefer to build it yourself? <a href="https://github.com/Yokeswaran4/Y-Connect#building-from-source" style="color:var(--accent)">Build from source</a>.</p>
 </div></section>
@@ -314,7 +338,7 @@ footer p{max-width:760px;margin:6px auto}
   <div class="about">
     <img src="logo.png" alt="">
     <div><h3>Made by Yokeswaran N</h3>
-    <p>I’m an 18-year-old student, and I built Y Connect inspired by KDE Connect. Found a bug? Tell me!</p>
+    <p>I’m an 18-year-old student, and I built Y Connect inspired by KDE Connect. So far it has been tested on Android and Arch Linux (GNOME and niri on Wayland). Windows 11, Android 16 and Debian 13 testing is planned and not claimed yet. Found a bug? Tell me!</p>
     <div class="l"><a class="btn s" href="https://github.com/Yokeswaran4/Y-Connect/issues">Report an issue</a><a class="btn s g" href="https://discord.com/users/895560596064464956">Discord</a><a class="btn s g" href="https://www.reddit.com/user/yokeswaran_n">Reddit</a></div></div>
   </div>
 </div></section>
@@ -536,7 +560,7 @@ function paintRelease(){
 }
 function check(){
  const out=$('#chkOut'),v=$('#myV').value.trim();out.dataset.ran='1';
- if(!/^v?\d+(\.\d+){0,3}$/i.test(v)){out.className='err';out.textContent='Type a version like v1.1 (you can find it in the app’s About page).';return}
+ if(!/^v?\d+(\.\d+){0,3}$/i.test(v)){out.className='err';out.textContent='Type a version like v1.2 (you can find it in the app’s About page).';return}
  store.set('yc-myv',v);
  if(!rel||rel.none){out.className='';out.textContent='Loading the latest release…';loadRelease(true).then(()=>{if(rel&&!rel.none)check()});return}
  if(isNewer(rel.tag,v)){out.className='new';out.innerHTML=`${rel.tag} is available. You have ${v.replace(/[<>&"]/g,'')}. <a href="${rel.url}" style="color:inherit">See what’s new →</a>`}
@@ -544,7 +568,7 @@ function check(){
 }
 $('#chk').addEventListener('submit',e=>{e.preventDefault();check()});
 $('#relBtn').onclick=()=>{$('#relNotes').className='rel-n sk';loadRelease(true)};
-const saved=store.get('yc-myv');$('#myV').value=saved||'v1.1';
+const saved=store.get('yc-myv');$('#myV').value=saved||'v1.2';
 loadRelease();
 
 /* ================= scroll effects ================= */

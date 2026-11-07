@@ -63,7 +63,7 @@
       <button class="tab" data-page="transfers" data-title="Transfers" data-sub="Files and folders moving between your devices."><svg><use href="#i-transfers"/></svg><span>Transfers</span><i class="badge hide" id="bTr">0</i></button>
       <button class="tab" data-page="sync" data-title="Sync" data-sub="Pick what is shared across your devices."><svg><use href="#i-sync"/></svg><span>Sync</span></button>
       <button class="tab" data-page="activity" data-title="Activity" data-sub="A live timeline of what happened on this device."><svg><use href="#i-activity"/></svg><span>Activity</span></button>
-      <button class="tab" data-page="settings" data-title="Settings" data-sub="Name this device, set the pairing code and tune the look."><svg><use href="#i-settings"/></svg><span>Settings</span></button>
+      <button class="tab" data-page="settings" data-title="Settings" data-sub="Name this device and tune the look."><svg><use href="#i-settings"/></svg><span>Settings</span></button>
       <button class="tab" data-page="contact" data-title="Contact" data-sub="Questions, bugs or ideas? Reach out."><svg><use href="#i-contact"/></svg><span>Contact</span></button>
       <button class="tab" data-page="licenses" data-title="Licenses" data-sub="Free software, licensed under the GNU GPL v3.0 or later."><svg><use href="#i-licenses"/></svg><span>Licenses</span></button>
     </div>
@@ -91,9 +91,9 @@
       <div class="sec"><h2>Connected</h2><span class="hint-s">Drop files onto a card to send instantly</span></div>
       <div id="peers" class="grid"></div>
 
-      <div class="sec"><h2>Nearby devices</h2><button class="b ghost sm" id="btnHaveCode"><svg><use href="#i-key"/></svg>I have a code</button></div>
+      <div class="sec"><h2>Nearby devices</h2></div>
       <div class="card" id="nearbyCard">
-        <p class="dim s lead">Y Connect is open on these devices. Pick one to get a pairing code, then type that code on the other device.</p>
+        <p class="dim s lead">Y Connect is open on these devices. Pick one to send a pairing request. The other device just taps Accept — no code to type.</p>
         <div id="nearby"></div>
       </div>
 
@@ -131,7 +131,7 @@
       </div>
       <div class="card danger-card">
         <h2><svg><use href="#i-terminal"/></svg>Remote control from your phone</h2>
-        <p class="dim s lead">Lets a paired Android phone run commands on this computer. It is <b>off by default</b>. Commands never run with sudo / administrator rights, and deleting files (rm, del, Remove-Item …) is always refused. Only phones paired with your code can ask.</p>
+        <p class="dim s lead">Lets a paired Android phone run commands on this computer. It is <b>off by default</b>. Commands never run with sudo / administrator rights, and deleting files (rm, del, Remove-Item …) is always refused. Only phones you have paired can ask.</p>
         <div class="tg"><span class="ti warn"><svg><use href="#i-shield"/></svg></span><div class="grow">Allow commands from phone<small>Runs as your normal user; stops after at most 2 minutes</small></div><label class="sw"><input type="checkbox" id="tCmd"></label></div>
       </div>
     </section>
@@ -179,8 +179,6 @@
       <div class="card"><h2>This device</h2>
         <label for="myName">Device name</label>
         <div class="field"><svg><use href="#i-laptop"/></svg><input type="text" id="myName" maxlength="40"></div>
-        <label for="pass">Pairing code — use the same code on every device</label>
-        <div class="row"><div class="field"><svg><use href="#i-key"/></svg><input type="text" id="pass" class="masked" maxlength="64" spellcheck="false" autocomplete="off"></div><button class="b ghost icon" id="btnCopyPass" title="Copy code"><svg><use href="#i-copy"/></svg></button><button class="b ghost" id="btnShowPass" aria-pressed="false">Show</button><button class="b ghost" id="btnGen"><svg><use href="#i-refresh"/></svg>New</button></div>
         <div class="btns"><button class="b" id="btnSave"><svg><use href="#i-check"/></svg>Save changes</button></div></div>
       <div class="card"><h2>Network</h2><div class="ips" id="ipChips"></div></div>
       <div class="card" id="updCard"><h2>About &amp; updates</h2>
@@ -193,7 +191,7 @@
         <p class="dim s lead">Reporting a bug? The debug report adds more technical details. It never includes your device name, IP addresses, pairing code or the text of clipboard and notification entries.</p>
         <div class="btns"><button class="b" id="btnCopyDbg"><svg><use href="#i-copy"/></svg>Copy debug report</button><button class="b ghost" id="btnSaveDbg">Save as file…</button></div></div>
       <p class="dim s center">Shortcuts: <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>7</kbd> switch pages · <kbd>Ctrl</kbd>+<kbd>K</kbd> quick actions · drop files anywhere to send</p>
-      <footer>Version <span id="ver">v1.1</span> · © 2026 Yokeswaran N · GPL-3.0-or-later · TCP 48998 / UDP 48999</footer>
+      <footer>Version <span id="ver">v1.2</span> · © 2026 Yokeswaran N · GPL-3.0-or-later · TCP 48998 / UDP 48999</footer>
     </section>
     </div>
   </main>
@@ -204,8 +202,8 @@
   <div class="orbit"><span class="o-ring"></span><span class="o-ring r2"></span><span class="o-core"><svg><use href="#i-key"/></svg></span></div>
   <h2 id="mpTitle">Pair</h2>
   <p class="dim" id="mpSub"></p>
-  <div class="code" id="mpCode" title="Click to copy"></div>
-  <p class="dim s"><span class="dots">Waiting for the other device</span></p>
+  <div class="code" id="mpCode"></div>
+  <p class="dim s" id="mpWait"><span class="dots">Waiting for the other device</span></p>
   <div class="btns j-center"><button class="b ghost" id="mpCancel">Cancel</button></div>
 </div></div>
 <!-- pairing: other device asks us to enter its code -->
@@ -213,9 +211,9 @@
   <div class="orbit sm"><span class="o-core"><svg><use href="#i-key"/></svg></span></div>
   <h2 id="meTitle">Enter pairing code</h2>
   <p class="dim" id="meSub"></p>
-  <input type="text" id="enterCode" maxlength="64" spellcheck="false" autocomplete="off" placeholder="K7QM-2XPD">
-  <p class="dim s">This replaces the pairing code of this device.</p>
-  <div class="btns j-center"><button class="b" id="mePair"><svg><use href="#i-check"/></svg>Pair</button><button class="b ghost" id="meCancel">Cancel</button></div>
+  <div class="code" id="meCode"></div>
+  <p class="dim s">A new random pairing code is created for this pair only. Other paired devices are not affected.</p>
+  <div class="btns j-center"><button class="b" id="mePair"><svg><use href="#i-check"/></svg>Accept</button><button class="b ghost" id="meCancel">Decline</button></div>
 </div></div>
 <!-- command palette -->
 <div class="modal top-modal" id="mPal"><div class="pal">

@@ -178,7 +178,6 @@ function render(s) {
   applyAccent(s);
   if (!inited) {
     $('myName').value = s.config.name;
-    $('pass').value = s.config.passphrase;
     inited = true;
   }
   $('tClip').checked = s.config.clipboardSync;
@@ -213,8 +212,8 @@ function render(s) {
   for (const id of [...lat.data.keys()]) if (!s.peers.some((p) => p.id === id)) { lat.data.delete(id); lat.open.delete(id); lat.hover.delete(id); }
   for (const p of s.peers) { if (p.lat) lat.data.set(p.id, p.lat); lat.addr.set(p.id, p.address); }
   const peersHtml = s.peers.length
-    ? s.peers.map((p) => `<div class="peer${enter(seen.peers, p.id)}" data-id="${esc(p.id)}"><div class="dropcue">${ic('download')}Drop to send to ${esc(p.name)}</div><div class="peer-top"><div class="avatar">${ic(platIc(p.platform))}<i class="dot"></i></div><div class="grow"><b>${esc(p.name)}</b><div class="dim s">${esc(platName(p.platform))}</div></div>${s.config.batterySync !== false && p.battery ? batHtml(p.battery) : ''}</div><div class="peer-actions"><button class="b sm sendbtn">${ic('send')}Send file</button><button class="b ghost sm sendfolderbtn">${ic('folder')}Send folder</button><button class="b ghost sm unpairbtn${armed === p.id ? ' armed' : ''}" title="Unpair this device">${armed === p.id ? 'Confirm unpair' : ic('unlink')}</button></div><div class="lat" data-lat></div></div>`).join('')
-    : `<div class="card" style="grid-column:1/-1;margin:0"><div class="radar big"><div class="scan">${ic('wifi')}</div><b>Looking for devices…</b><span class="s">Open Y Connect on another device on the same Wi-Fi.</span><div class="steps"><span><i>1</i>Open Y Connect on your phone</span><span><i>2</i>Pick it under Nearby</span><span><i>3</i>Type the code shown</span></div></div></div>`;
+    ? s.peers.map((p) => `<div class="peer${enter(seen.peers, p.id)}" data-id="${esc(p.id)}"><div class="dropcue">${ic('download')}Drop to send to ${esc(p.name)}</div><div class="peer-top"><div class="avatar">${ic(platIc(p.platform))}<i class="dot"></i></div><div class="grow"><b>${esc(p.name)}</b><div class="dim s">${esc(platName(p.platform))}</div></div>${s.config.batterySync !== false && p.battery ? batHtml(p.battery) : ''}</div><div class="peer-actions"><button class="b sm sendbtn">${ic('send')}Send file</button><button class="b ghost sm sendfolderbtn">${ic('folder')}Send folder</button>${p.platform === 'android' ? (s.mounts || []).some((m) => m.id === p.id) ? `<button class="b ghost sm unmountbtn" title="Unmount the phone's storage">${ic('folder')}Unmount</button>` : `<button class="b ghost sm mountbtn" title="Show the phone's storage as a drive or network location">${ic('folder')}Mount storage</button>` : ''}<button class="b ghost sm unpairbtn${armed === p.id ? ' armed' : ''}" title="Unpair this device">${armed === p.id ? 'Confirm unpair' : ic('unlink')}</button></div><div class="lat" data-lat></div></div>`).join('')
+    : `<div class="card" style="grid-column:1/-1;margin:0"><div class="radar big"><div class="scan">${ic('wifi')}</div><b>Looking for devices…</b><span class="s">Open Y Connect on another device on the same Wi-Fi.</span><div class="steps"><span><i>1</i>Open Y Connect on your phone</span><span><i>2</i>Pick it under Nearby</span><span><i>3</i>Accept on the other device</span></div></div></div>`;
   setHtml($('peers'), peersHtml);
   for (const p of s.peers) paintLat(p.id);
 
@@ -224,15 +223,13 @@ function render(s) {
   setHtml($('nearby'), nearbyHtml);
 
   // pairing dialogs follow the state
-  if (pairing && s.peers.some((p) => p.id === pairing.id)) {
-    const n = pairing.name;
-    closePair(false);
-    toast('Paired with ' + n);
-  }
+  const po = s.pairOut;
+  if (po && s.peers.some((p) => p.id === po.id)) { closePair(false); toast('Paired with ' + po.name); }
+  else if (po) paintPairOut(po);
+  else if ($('mPair').classList.contains('on')) $('mPair').classList.remove('on');
   const pr = s.pairRequest;
-  if (!pr) dismissedPair = null;
-  if (pr && enterFor !== pr.id && dismissedPair !== pr.id) openEnter(pr);
-  else if (!pr && enterFor && $('mEnter').classList.contains('on')) closeEnter(false);
+  if (pr) paintPairIn(pr);
+  else $('mEnter').classList.remove('on');
 
   const live = s.transfers.filter((t) => t.status === 'waiting' || t.status === 'active').length;
   setBadge($('bTr'), live);
@@ -283,76 +280,44 @@ function render(s) {
   setHtml($('log'), logHtml);
 }
 
-// --- pairing: click a nearby device -> code is shown here; the other device enters it ---
-let pairing = null;      // { id, name } while our code is on screen
-let enterFor = null;     // id of the device that asked us to pair (null = manual entry)
-let dismissedPair = null;
-const codeOk = (c) => c.replace(/[^A-Za-z0-9]/g, '').length >= 4;
-function closePair(notify = true) {
-  if (pairing && notify) window.yconnect.pairCancel(pairing.id);
-  pairing = null;
-  $('mPair').classList.remove('on');
+// --- pairing: tap a device under Nearby -> the other device sees Accept / Decline. Both screens show the same check number. ---
+function paintPairOut(po) {
+  const bad = po.state === 'declined' || po.state === 'failed';
+  $('mpTitle').textContent = 'Pair with ' + po.name;
+  $('mpSub').textContent = po.state === 'declined' ? po.name + ' declined the request.'
+    : po.state === 'failed' ? 'Could not reach ' + po.name + '.'
+    : po.sas ? 'Waiting for ' + po.name + ' to accept. Make sure this number matches there:' : 'Contacting ' + po.name + '…';
+  $('mpCode').textContent = po.sas || '';
+  $('mpCode').style.display = po.sas && !bad ? '' : 'none';
+  $('mpWait').style.display = bad ? 'none' : '';
+  $('mpCancel').textContent = bad ? 'Close' : 'Cancel';
+  $('mPair').classList.add('on');
 }
-function openEnter(pr) {
-  enterFor = pr ? pr.id : null;
-  $('meTitle').textContent = pr ? pr.name + ' wants to pair' : 'Enter pairing code';
-  $('meSub').textContent = pr ? 'Enter the pairing code shown on ' + pr.name + '.' : 'Enter the pairing code shown on your other device.';
-  $('enterCode').value = '';
+function paintPairIn(pr) {
+  $('meTitle').textContent = pr.name + ' wants to pair';
+  $('meSub').textContent = 'Accept only if this number is the same on ' + pr.name + ':';
+  $('meCode').textContent = pr.sas;
   $('mEnter').classList.add('on');
-  setTimeout(() => $('enterCode').focus(), 120);
 }
-function closeEnter(dismiss = true) {
-  if (enterFor && dismiss) { dismissedPair = enterFor; window.yconnect.dismissPair(); }
-  enterFor = null;
-  $('mEnter').classList.remove('on');
+function closePair(notify = true) {
+  if (notify) window.yconnect.pairCancel();
+  $('mPair').classList.remove('on');
 }
 $('nearby').addEventListener('click', async (e) => {
   const row = e.target.closest('.item.nearby');
   if (!row) return;
   const r = await window.yconnect.pairRequest(row.dataset.id);
   if (!r) { toast('That device is no longer visible'); return; }
-  pairing = { id: row.dataset.id, name: r.name };
-  $('mpTitle').textContent = 'Pair with ' + r.name;
-  $('mpSub').textContent = 'Enter this pairing code on ' + r.name + ':';
-  $('mpCode').textContent = r.code;
-  $('mPair').classList.add('on');
+  paintPairOut({ name: r.name, sas: '', state: 'waiting' });
 });
 $('mpCancel').onclick = () => closePair(true);
-$('btnHaveCode').onclick = () => openEnter(null);
-$('meCancel').onclick = () => closeEnter(true);
-$('mePair').onclick = async () => {
-  const code = $('enterCode').value.trim();
-  if (!codeOk(code)) { toast('Enter the full pairing code'); return; }
-  if (enterFor) await window.yconnect.dismissPair();
-  dismissedPair = enterFor;
-  enterFor = null;
-  $('mEnter').classList.remove('on');
-  $('pass').value = code;
-  render(await window.yconnect.setConfig({ passphrase: code }));
-  toast('Pairing code set — connecting…');
-};
-$('enterCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('mePair').click(); if (e.key === 'Escape') $('meCancel').click(); });
+$('mePair').onclick = async () => { $('mEnter').classList.remove('on'); await window.yconnect.pairAccept(); toast('Accepted — connecting…'); };
+$('meCancel').onclick = async () => { $('mEnter').classList.remove('on'); await window.yconnect.pairDecline(); };
 $('mPair').addEventListener('keydown', (e) => { if (e.key === 'Escape') $('mpCancel').click(); });
 
 $('btnSave').onclick = async () => {
-  render(await window.yconnect.setConfig({ name: $('myName').value, passphrase: $('pass').value }));
+  render(await window.yconnect.setConfig({ name: $('myName').value }));
   toast('Saved');
-};
-let passShown = false;
-const setPassShown = (v) => {
-  passShown = v;
-  $('pass').classList.toggle('masked', !v);
-  $('btnShowPass').textContent = v ? 'Hide' : 'Show';
-  $('btnShowPass').setAttribute('aria-pressed', String(v));
-};
-$('btnShowPass').onclick = () => setPassShown(!passShown);
-setPassShown(false);
-$('btnGen').onclick = () => {
-  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const r = crypto.getRandomValues(new Uint8Array(8));
-  const s = Array.from(r, (n) => a[n % a.length]).join('');
-  $('pass').value = s.slice(0, 4) + '-' + s.slice(4);
-  setPassShown(true); // show the new code so it can be read out, like on Android
 };
 $('tClip').onchange = (e) => window.yconnect.setConfig({ clipboardSync: e.target.checked });
 $('tNotif').onchange = (e) => window.yconnect.setConfig({ notifySync: e.target.checked });
@@ -404,6 +369,19 @@ $('peers').addEventListener('click', async (e) => {
   if (pb) { window.yconnect.pingNow(pb.closest('.peer').dataset.id); return; }
   const b = e.target.closest('.sendbtn');
   if (b) { window.yconnect.pickAndSend(b.closest('.peer').dataset.id); return; }
+  const mb = e.target.closest('.mountbtn');
+  if (mb) {
+    const id = mb.closest('.peer').dataset.id;
+    mb.disabled = true; mb.textContent = 'Mounting…';
+    const r = await window.yconnect.mountStorage(id);
+    if (r.ok) toast(r.manual ? 'Storage ready — connect to ' + r.url : 'Phone storage mounted' + (r.drive ? ' as ' + r.drive : ''));
+    else toast((r.error || 'Could not mount') + (r.hint ? ' ' + r.hint : ''));
+    if (r.ok && r.manual) copyText(r.url);
+    if (lastState) render(lastState);
+    return;
+  }
+  const ub = e.target.closest('.unmountbtn');
+  if (ub) { await window.yconnect.unmountStorage(ub.closest('.peer').dataset.id); toast('Unmounted'); return; }
   const fb = e.target.closest('.sendfolderbtn');
   if (fb) { window.yconnect.pickFolderAndSend(fb.closest('.peer').dataset.id); return; }
   const u = e.target.closest('.unpairbtn');
@@ -491,7 +469,6 @@ document.addEventListener('drop', (e) => {
 async function copyText(t) {
   try { await navigator.clipboard.writeText(t); toast('Copied'); } catch { toast('Could not copy'); }
 }
-$('mpCode').addEventListener('click', () => copyText($('mpCode').textContent));
 $('ipChips').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (c) copyText(c.textContent); });
 
 document.querySelectorAll('.link-card').forEach((a) => a.addEventListener('click', () => window.yconnect.openExternal(a.dataset.url)));
@@ -559,7 +536,6 @@ document.querySelectorAll('#logSeg button').forEach((b) => b.addEventListener('c
 
 // --- copy helpers ---
 $('ips').addEventListener('click', () => { if (lastState && lastState.ips[0]) copyText(lastState.ips[0]); });
-$('btnCopyPass').onclick = () => copyText($('pass').value);
 
 // --- quick actions (Ctrl+K) ---
 const pal = { sel: 0, items: [] };
@@ -567,7 +543,6 @@ const palCommands = () => [
   ...tabs.map((t, i) => ({ label: 'Go to ' + t.dataset.title, icon: t.dataset.page, hint: 'Ctrl+' + (i + 1), run: () => t.click() })),
   { label: 'Send clipboard now', icon: 'clipboard', run: () => $('btnSend').click() },
   { label: 'Send test notification', icon: 'bell', run: () => $('btnTest').click() },
-  { label: 'Enter a pairing code', icon: 'key', run: () => openEnter(null) },
   { label: 'Open downloads folder', icon: 'folder', run: () => $('btnOpenDl').click() },
   { label: 'Copy this computer’s IP address', icon: 'copy', run: () => $('ips').click() },
   { label: 'Theme: System', icon: 'auto', run: () => window.yconnect.setConfig({ theme: 'system' }) },
