@@ -256,7 +256,7 @@ function flushTerm(t, force) {
   if (!force && t.ws.bufferedAmount > 2 * 1024 * 1024) { t.flushTimer = setTimeout(() => flushTerm(t), 100); return; } // phone is slow: wait
   const all = Buffer.concat(t.buf); t.buf = []; t.bufSize = 0;
   let text = all.toString('utf8');
-  if (Date.now() - t.opened < 5000) text = text.replace(/[^\n]*(?:can't access tty|job control turned off)[^\n]*\n?/i, ''); // sh -i without a tty says so once at start-up
+  if (Date.now() - t.opened < 5000) text = text.replace(/^[^\n]*(?:can't access tty|job control turned off|no job control|cannot set terminal process group)[^\n]*\n?/gim, ''); // sh -i without a tty says so once at start-up
   for (let i = 0; i < text.length; i += 32768) D.sendTo(t.ws, { type: 'cmd-term-data', sid: t.sid, d: text.slice(i, i + 32768) });
 }
 function termBump(t) {
