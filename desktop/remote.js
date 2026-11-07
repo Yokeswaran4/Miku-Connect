@@ -8,6 +8,10 @@
  *   cmd-run    {rid, command, shell?, timeout?}  ------->
  *   cmd-rm     (retired: always refused)         ------->
  *   cmd-cancel {rid}                             ------->
+ *   cmd-term-open {sid, shell?}                  ------->  interactive terminal: one shell that stays open
+ *   cmd-term-input {sid, d} (whole lines)        ------->
+ *   cmd-term-int {sid} | cmd-term-close {sid}    ------->
+ *                                                <-------  cmd-term-ready {sid, shell, cwd} | cmd-term-data {sid, d} | cmd-term-exit {sid, code, error?}
  *                                                <-------  cmd-result {rid, ok, code, stdout, stderr, truncated, ms, error?}
  *
  * error = { kind, why, fix }: a plain-language reason and the way to resolve it, shown on the phone.
@@ -26,11 +30,13 @@ const { spawn, execFile } = require('child_process');
 const os = require('os');
 
 const IS_WIN = process.platform === 'win32';
-const MAX_OUT = 48 * 1024;        // per stream
-const MAX_CMD = 4000;
+const MAX_OUT = 512 * 1024;       // per stream (was 48 KB)
+const MAX_CMD = 16000;            // characters in one command or one terminal line (was 4000)
 const DEFAULT_TIMEOUT = 30;       // seconds
-const MAX_TIMEOUT = 120;
-const MAX_RUNNING = 3;
+const MAX_TIMEOUT = 600;          // seconds (was 120)
+const MAX_RUNNING = 6;            // commands at once (was 3)
+const MAX_TERMS = 2;              // open terminal sessions
+const TERM_IDLE = 30 * 60 * 1000; // a terminal nobody types in for this long is closed
 
 let D = null;                     // { peers, sendTo, getConfig, addLog }
 const running = new Map();        // rid -> { ws, child, cancelled }
@@ -66,8 +72,8 @@ function explainExit({ code, signal, stderr, stdout, timedOut, timeout, cancelle
   if (cancelled) return E('cancelled', 'You cancelled the command.', 'Run it again if you still need it.');
   if (timedOut) {
     return E('timeout', `The command was still running after ${timeout} seconds, so Y Connect stopped it. Programs that never finish on their own (top, ping without a count, tail -f, editors, installers waiting for input) always end up here.`,
-      IS_WIN ? 'Use a version that ends by itself (for example ping -n 4 host), or raise the time limit on the phone (max 120 s).'
-        : 'Use a version that ends by itself (for example ping -c 4 host, or top -b -n 1), or raise the time limit on the phone (max 120 s).');
+      IS_WIN ? 'Use a version that ends by itself (for example ping -n 4 host), or raise the time limit on the phone (max 10 minutes).'
+        : 'Use a version that ends by itself (for example ping -c 4 host, or top -b -n 1), or raise the time limit on the phone (max 10 minutes).');
   }
   if (/password is required|a terminal is required|must be run from a terminal|no tty present|askpass/i.test(text)) {
     return E('needs-terminal', 'The command wanted a password or an interactive terminal. Y Connect has neither: it never elevates and nothing can be typed while a command runs.',
@@ -229,14 +235,114 @@ function explainSpawn(e, file) {
 }
 
 /* ---------- entry points ---------- */
+/* ---------- interactive terminal ---------- */
+// One long-lived shell per session. The phone sends whole lines (never single keystrokes), so every line goes through
+// the same guard rails as a one-off command before it reaches the shell. Output (stdout and stderr together) is streamed back.
+const terms = new Map(); // sid -> { ws, child, timer, idle, closed }
+
+function termExit(sid, code, error) {
+  const t = terms.get(sid);
+  if (!t || t.closed) return;
+  t.closed = true;
+  clearTimeout(t.flushTimer); clearTimeout(t.idle);
+  flushTerm(t, true);
+  terms.delete(sid);
+  D.sendTo(t.ws, { type: 'cmd-term-exit', sid, code: code == null ? -1 : code, error: error || null });
+  D.addLog('cmd', 'Terminal closed', t.who.name);
+}
+function flushTerm(t, force) {
+  t.flushTimer = null;
+  if (!t.buf.length) return;
+  if (!force && t.ws.bufferedAmount > 2 * 1024 * 1024) { t.flushTimer = setTimeout(() => flushTerm(t), 100); return; } // phone is slow: wait
+  const all = Buffer.concat(t.buf); t.buf = []; t.bufSize = 0;
+  let text = all.toString('utf8');
+  if (Date.now() - t.opened < 5000) text = text.replace(/^[^\n]*(?:can't access tty|job control turned off|no job control|cannot set terminal process group)[^\n]*\n?/gim, ''); // sh -i without a tty says so once at start-up
+  for (let i = 0; i < text.length; i += 32768) D.sendTo(t.ws, { type: 'cmd-term-data', sid: t.sid, d: text.slice(i, i + 32768) });
+}
+function termBump(t) {
+  clearTimeout(t.idle);
+  t.idle = setTimeout(() => { D.sendTo(t.ws, { type: 'cmd-term-data', sid: t.sid, d: '\n[Closed: nobody typed for 30 minutes]\n' }); closeTerm(t); }, TERM_IDLE);
+}
+function closeTerm(t) { if (t.child) killTree(t.child); }
+
+function termOpen(ws, who, msg) {
+  const sid = String(msg.sid || '').slice(0, 64);
+  if (!sid || terms.has(sid)) return;
+  const fail2 = (error) => D.sendTo(ws, { type: 'cmd-term-exit', sid, code: -1, error });
+  if (!D.getConfig().allowCommands) {
+    D.addLog('warn', 'Terminal refused', `${who.name} tried to open a terminal but remote commands are off`);
+    return fail2(E('disabled', `Remote commands are turned off on ${me()}. This is the default, so nothing runs unless you allow it.`, `On ${me()}: open Y Connect > Sync > "Allow commands from phone" and switch it on, then try again.`));
+  }
+  if (terms.size >= MAX_TERMS) return fail2(E('busy', `${MAX_TERMS} terminals are already open on ${me()}.`, 'Close one and try again.'));
+  const shell = msg.shell === 'powershell' && IS_WIN ? 'powershell' : 'default';
+  const env = Object.assign({}, process.env, { TERM: 'dumb', NO_COLOR: '1', PS1: '$ ', PS2: '> ', HISTFILE: '/dev/null' });
+  delete env.SUDO_ASKPASS; delete env.SSH_ASKPASS;
+  const opts = { cwd: os.homedir(), stdio: ['pipe', 'pipe', 'pipe'], env };
+  let file, args;
+  if (IS_WIN) {
+    opts.windowsHide = true;
+    if (shell === 'powershell') { file = 'powershell.exe'; args = ['-NoLogo', '-NoProfile', '-NoExit', '-Command', '[Console]::OutputEncoding=[Text.Encoding]::UTF8']; }
+    else { file = process.env.ComSpec || 'cmd.exe'; args = ['/d', '/k', 'chcp 65001>nul']; }
+  } else { file = '/bin/sh'; args = ['-i']; opts.detached = true; }
+  let child;
+  try { child = spawn(file, args, opts); } catch (e) { return fail2(explainSpawn(e, file)); }
+  const t = { sid, ws, who, child, buf: [], bufSize: 0, flushTimer: null, idle: null, closed: false, opened: Date.now(), pending: '' };
+  terms.set(sid, t);
+  const onData = (d) => {
+    t.buf.push(d); t.bufSize += d.length;
+    if (t.bufSize > 4 * MAX_OUT) { t.buf = [Buffer.from('\n[output too fast: some was skipped]\n')]; t.bufSize = 0; } // never grow without limit
+    if (!t.flushTimer) t.flushTimer = setTimeout(() => flushTerm(t), 40);
+  };
+  child.stdout.on('data', onData);
+  child.stderr.on('data', onData);
+  child.stdin.on('error', () => {});
+  child.on('error', (e) => { terms.delete(sid); t.closed = true; clearTimeout(t.idle); D.sendTo(ws, { type: 'cmd-term-exit', sid, code: -1, error: explainSpawn(e, file) }); });
+  child.on('close', (code) => termExit(sid, code));
+  termBump(t);
+  D.addLog('cmd', `Terminal opened by ${who.name}`, shell === 'powershell' ? 'PowerShell' : (IS_WIN ? 'Command Prompt' : 'sh'));
+  D.sendTo(ws, { type: 'cmd-term-ready', sid, shell: shell === 'powershell' ? 'PowerShell' : (IS_WIN ? 'Command Prompt' : 'sh'), cwd: os.homedir() });
+}
+
+function termInput(ws, who, msg) {
+  const t = terms.get(String(msg.sid || ''));
+  if (!t || t.ws !== ws || t.closed || typeof msg.d !== 'string') return;
+  if (!D.getConfig().allowCommands) return termExit(t.sid, -1, E('disabled', 'Remote commands were turned off on the computer.', 'Switch "Allow commands from phone" on again to use the terminal.'));
+  termBump(t);
+  t.pending += msg.d.replace(/\r\n?/g, '\n');
+  if (t.pending.length > 4 * MAX_CMD) t.pending = t.pending.slice(-MAX_CMD);
+  let nl;
+  while ((nl = t.pending.indexOf('\n')) >= 0) {
+    const line = t.pending.slice(0, nl);
+    t.pending = t.pending.slice(nl + 1);
+    if (line.length > MAX_CMD || /\0/.test(line)) { D.sendTo(ws, { type: 'cmd-term-data', sid: t.sid, d: `[refused: the line is longer than ${MAX_CMD} characters or invalid]\n` }); continue; }
+    const elev = findElevation(line);
+    if (elev) { D.addLog('warn', 'Command refused', `Needs elevation (${elev}): ${preview(line)}`); D.sendTo(ws, { type: 'cmd-term-data', sid: t.sid, d: `[refused: "${elev}" needs administrator / root rights, which Y Connect never uses]\n` }); t.child.stdin.write('\n'); continue; }
+    const del = findDeletion(line);
+    if (del) { D.addLog('warn', 'Command refused', `Delete command (${del}): ${preview(line)}`); D.sendTo(ws, { type: 'cmd-term-data', sid: t.sid, d: `[refused: "${del}" deletes files, which is not allowed from the phone]\n` }); t.child.stdin.write('\n'); continue; }
+    try { t.child.stdin.write(line + (IS_WIN ? '\r\n' : '\n')); } catch {}
+  }
+}
+
 function onMessage(ws, msg) {
   const who = senderOk(ws);
   const rid = String(msg.rid || '').slice(0, 64);
-  if (msg.type === 'cmd-result') return; // only phones receive results
+  if (msg.type === 'cmd-result' || msg.type === 'cmd-term-ready' || msg.type === 'cmd-term-data' || msg.type === 'cmd-term-exit') return; // only phones receive these
   if (!who) {
     if (rid) fail(ws, rid, E('sender', 'Only a paired Android phone may send commands to a computer.', 'Pair the phone with this computer first (Devices tab).'));
     return;
   }
+  if (msg.type === 'cmd-term-open') return termOpen(ws, who, msg);
+  if (msg.type === 'cmd-term-input') return termInput(ws, who, msg);
+  if (msg.type === 'cmd-term-int') {
+    const t = terms.get(String(msg.sid || ''));
+    if (t && t.ws === ws && !t.closed) {
+      termBump(t);
+      if (IS_WIN) { D.sendTo(ws, { type: 'cmd-term-data', sid: t.sid, d: '\n[Ctrl+C is not available on Windows. Close the terminal and open it again to stop a running program.]\n' }); }
+      else { try { process.kill(-t.child.pid, 'SIGINT'); } catch {} }
+    }
+    return;
+  }
+  if (msg.type === 'cmd-term-close') { const t = terms.get(String(msg.sid || '')); if (t && t.ws === ws) closeTerm(t); return; }
   if (msg.type === 'cmd-run') runCommand(ws, who, msg);
   else if (msg.type === 'cmd-rm') {
     // retired: an older phone may still send it, so answer instead of leaving it waiting
@@ -252,6 +358,7 @@ function onMessage(ws, msg) {
 /** When the phone disconnects its commands are stopped, so nothing keeps running unseen. */
 function onDisconnected(ws) {
   for (const [rid, j] of running) if (j.ws === ws) { j.cancelled = true; killTree(j.child); }
+  for (const t of terms.values()) if (t.ws === ws) { t.ws = { bufferedAmount: 0, readyState: 3 }; closeTerm(t); }
 }
 
 module.exports = { init, onMessage, onDisconnected, findElevation, findDeletion };

@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <!-- lets the notification listener show real app names (sideloaded build, not for Play Store) -->
+    <!-- lets a paired computer mount this phone's storage; only used after the user turns on "Share phone storage" -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <!-- lets Y Connect offer to uninstall a leftover copy of the old app that was released under the previous name -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />

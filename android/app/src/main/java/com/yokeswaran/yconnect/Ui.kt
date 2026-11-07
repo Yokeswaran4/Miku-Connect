@@ -11,6 +11,14 @@ import android.net.Uri
 import android.provider.Settings as AndroidSettings
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.StartOffset
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
@@ -224,16 +232,39 @@ private fun Deferred(frames: Int = 1, content: @Composable () -> Unit) {
 @Composable
 private fun Appear(delayMs: Int = 0, content: @Composable () -> Unit) {
     val a = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { if (delayMs > 0) delay(delayMs.toLong()); a.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) }
+    LaunchedEffect(Unit) { if (delayMs > 0) delay(delayMs.toLong()); a.animateTo(1f, tween(380, easing = FastOutSlowInEasing)) }
     Box(Modifier.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 24.dp.toPx() }) { content() }
 }
 
-/** Quick, flat press feedback (no spring, no overshoot) for anything tappable. */
+/** Springy press-down feedback for anything tappable (same feel as Cat Senpai). */
 @Composable
 private fun Modifier.pressScale(src: MutableInteractionSource, to: Float = 0.97f): Modifier {
     val pressed by src.collectIsPressedAsState()
-    val sc by animateFloatAsState(if (pressed) to else 1f, tween(90), label = "press")
+    val sc by animateFloatAsState(if (pressed) to else 1f, spring(dampingRatio = 0.6f, stiffness = 500f), label = "press")
     return this.graphicsLayer { scaleX = sc; scaleY = sc }
+}
+
+/** Gentle up-and-down drift. */
+@Composable
+private fun Modifier.floating(amp: Dp = 6.dp, period: Int = 2600): Modifier {
+    val t = rememberInfiniteTransition(label = "float")
+    val y by t.animateFloat(-1f, 1f, infiniteRepeatable(tween(period, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "y")
+    return this.graphicsLayer { translationY = y * amp.toPx() }
+}
+
+/** A moving highlight for placeholder boxes while content loads. Apply after clip(). */
+@Composable
+private fun Modifier.shimmer(): Modifier {
+    val cs = MaterialTheme.colorScheme
+    val base = cs.surfaceContainerHigh
+    val hi = cs.surfaceContainerHighest
+    val t = rememberInfiniteTransition(label = "shimmer")
+    val x by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "x")
+    return this.drawBehind {
+        val w = size.width.coerceAtLeast(1f)
+        val start = -w + x * 2f * w
+        drawRect(Brush.linearGradient(listOf(base, hi, base), start = Offset(start, 0f), end = Offset(start + w, 0f)))
+    }
 }
 
 @Composable
@@ -250,32 +281,36 @@ private fun liveTransferCount(): Int {
 }
 
 @Composable
-internal fun Card(title: String? = null, content: @Composable () -> Unit) {
+internal fun Card(title: String? = null, enterIndex: Int = -1, content: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(16.dp)
-    Column(
-        Modifier.fillMaxWidth().clip(shape).background(cs.surfaceContainer.copy(alpha = 0.78f))
-            .border(1.dp, cs.outlineVariant, shape).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        if (title != null) Text(title.uppercase(), color = cs.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp)
-        content()
+    val body = @Composable {
+        Surface(Modifier.fillMaxWidth(), MaterialTheme.shapes.large, cs.surfaceContainer) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (title != null) Text(title.uppercase(), color = cs.primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                content()
+            }
+        }
     }
+    // enterIndex >= 0: the card fades and rises in, each one a little after the one before it
+    if (enterIndex >= 0) Appear(enterIndex * 60) { body() } else body()
 }
 
 @Composable
 internal fun Dim(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) = Text(text, color = color, fontSize = 12.sp)
 
 @Composable
-internal fun Page(title: String, subtitle: String, pad: PaddingValues, content: @Composable () -> Unit) {
+internal fun Page(title: String, subtitle: String, pad: PaddingValues, actions: @Composable RowScope.() -> Unit = {}, content: @Composable () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(
-        Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxSize().padding(pad).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Column(Modifier.padding(top = 4.dp, bottom = 2.dp)) {
-            Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp, color = cs.onBackground)
-            Dim(subtitle)
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.headlineMedium, color = cs.onBackground)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
+            }
+            actions()
         }
         content()
         Spacer(Modifier.size(12.dp))
@@ -284,13 +319,16 @@ internal fun Page(title: String, subtitle: String, pad: PaddingValues, content: 
 
 @Composable
 private fun SectionLabel(text: String) {
-    Text(text.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+    Text(text.uppercase(), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, top = 8.dp))
 }
 
+/** Rounded icon tile used in lists and settings rows. The accent colour becomes the theme's primary container. */
 @Composable
 private fun IconBubble(ic: ImageVector, tint: Color, size: Dp = 40.dp) {
-    Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.3f)).background(tint.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
-        Icon(ic, null, tint = tint, modifier = Modifier.size(size * 0.5f))
+    val cs = MaterialTheme.colorScheme
+    val brand = tint == cs.primary
+    Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.32f)).background(if (brand) cs.primaryContainer else tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+        Icon(ic, null, tint = if (brand) cs.onPrimaryContainer else tint, modifier = Modifier.size(size * 0.5f))
     }
 }
 
@@ -325,17 +363,17 @@ private fun SettingRow(ic: ImageVector, label: String, hint: String?, checked: B
 private fun Segmented(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val haptic = LocalHapticFeedback.current
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.outlineVariant.copy(alpha = 0.45f)).padding(3.dp)) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerHigh).padding(3.dp)) {
         options.forEach { (value, label) ->
             val on = value == selected
-            val bg by animateColorAsState(if (on) cs.primary else Color.Transparent, tween(250), label = "seg-bg")
+            val bg by animateColorAsState(if (on) cs.primaryContainer else Color.Transparent, spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMedium), label = "seg-bg")
             Box(
                 Modifier.weight(1f).clip(RoundedCornerShape(13.dp)).background(bg)
                     .clickable { if (!on) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSelect(value) } }
                     .padding(vertical = 9.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text(label, color = if (on) cs.onPrimary else cs.onSurfaceVariant, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Text(label, color = if (on) cs.onPrimaryContainer else cs.onSurfaceVariant, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             }
         }
     }
@@ -353,12 +391,11 @@ private fun Pill(text: String, color: Color) {
 private fun PlatformAvatar(platform: String, online: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Box(Modifier.size(48.dp)) {
-        Box(
-            Modifier.fillMaxSize().clip(RoundedCornerShape(15.dp))
-                .background(Brush.linearGradient(listOf(cs.primary.copy(alpha = 0.30f), cs.tertiary.copy(alpha = 0.20f)))),
-            contentAlignment = Alignment.Center
-        ) { Icon(platformIcon(platform), null, tint = cs.primary, modifier = Modifier.size(24.dp)) }
-        if (online) Box(Modifier.align(Alignment.BottomEnd).size(14.dp).clip(CircleShape).background(cs.surfaceContainer).padding(2.5.dp).clip(CircleShape).background(OkGreen))
+        Box(Modifier.fillMaxSize().clip(CircleShape).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
+            Icon(platformIcon(platform), null, tint = cs.onPrimaryContainer, modifier = Modifier.size(24.dp))
+        }
+        val dot by animateColorAsState(if (online) StatusOnline else Color.Transparent, label = "status")
+        if (online) Box(Modifier.align(Alignment.BottomEnd).size(16.dp).background(cs.surfaceContainer, CircleShape).padding(3.dp).background(dot, CircleShape))
     }
 }
 
@@ -379,22 +416,20 @@ private fun BatteryChip(level: Int, charging: Boolean) {
 @Composable
 private fun StatTile(ic: ImageVector, value: Int, label: String, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(16.dp)
-    Column(
-        modifier.clip(shape).background(cs.surfaceContainer.copy(alpha = 0.78f)).border(1.dp, cs.outlineVariant, shape).padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        IconBubble(ic, cs.primary, 34.dp)
-        AnimatedContent(
-            targetState = value,
-            transitionSpec = {
-                val up = targetState > initialState
-                (slideInVertically(tween(220)) { if (up) it else -it } + fadeIn(tween(220)))
-                    .togetherWith(slideOutVertically(tween(160)) { if (up) -it else it } + fadeOut(tween(120)))
-            },
-            label = "stat"
-        ) { v -> Text(v.toString(), fontSize = 26.sp, fontWeight = FontWeight.Bold) }
-        Dim(label)
+    Surface(modifier, MaterialTheme.shapes.large, cs.surfaceContainer) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            IconBubble(ic, cs.primary, 34.dp)
+            AnimatedContent(
+                targetState = value,
+                transitionSpec = {
+                    val up = targetState > initialState
+                    (slideInVertically(tween(220)) { if (up) it else -it } + fadeIn(tween(220)))
+                        .togetherWith(slideOutVertically(tween(160)) { if (up) -it else it } + fadeOut(tween(120)))
+                },
+                label = "stat"
+            ) { v -> Text(v.toString(), style = MaterialTheme.typography.headlineSmall) }
+            Dim(label)
+        }
     }
 }
 
@@ -428,11 +463,36 @@ private fun Radar(size: Dp = 96.dp) {
 @Composable
 private fun EmptyState(ic: ImageVector, title: String, text: String) {
     val cs = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        IconBubble(ic, cs.onSurfaceVariant, 56.dp)
-        Spacer(Modifier.height(4.dp))
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        Text(text, color = cs.onSurfaceVariant, fontSize = 13.sp, textAlign = TextAlign.Center)
+    Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.floating().size(72.dp).clip(CircleShape).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
+            Icon(ic, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(32.dp))
+        }
+        Text(title, Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
+        Text(text, Modifier.padding(top = 6.dp), color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
+    }
+}
+
+/** Loading placeholder row (shimmering avatar and two lines). */
+@Composable
+private fun SkeletonRow() {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(48.dp).clip(CircleShape).shimmer())
+        Column(Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.width(130.dp).height(14.dp).clip(RoundedCornerShape(7.dp)).shimmer())
+            Box(Modifier.width(80.dp).height(12.dp).clip(RoundedCornerShape(6.dp)).shimmer())
+        }
+    }
+}
+
+/** Three bouncing dots: "waiting for the other device". */
+@Composable
+private fun TypingDots(color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+    val t = rememberInfiniteTransition(label = "dots")
+    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) { i ->
+            val a by t.animateFloat(0.25f, 1f, infiniteRepeatable(tween(450), RepeatMode.Reverse, StartOffset(i * 150)), label = "d$i")
+            Box(Modifier.size(5.dp).graphicsLayer { alpha = a; scaleX = 0.7f + 0.3f * a; scaleY = 0.7f + 0.3f * a }.background(color, CircleShape))
+        }
     }
 }
 
@@ -457,114 +517,91 @@ private fun sendClipboardNow(ctx: Context) {
     })
 }
 
-/** Uses a pairing code typed by the user. Returns true when it was accepted. */
-private fun usePairingCode(ctx: Context, code: String): Boolean {
-    val c = code.trim()
-    if (Crypto.normalize(c).length < 4) { toast(ctx, "Enter the full pairing code"); return false }
-    Hub.updateSettings(Hub.settings.value.copy(passphrase = c))
-    toast(ctx, "Pairing code set — connecting…")
-    return true
-}
-
+/** The 6-digit number both devices show while pairing. */
 @Composable
-private fun EnterCodeDialog(title: String, hint: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun CheckNumber(sas: String) {
     val cs = MaterialTheme.colorScheme
-    var code by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(28.dp),
-        icon = { IconBubble(KeyIcon, cs.primary, 52.dp) },
-        title = { Text(title, textAlign = TextAlign.Center) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(hint)
-                OutlinedTextField(
-                    code, { code = it.uppercase() }, singleLine = true, placeholder = { Text("K7QM-2XPD", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
-                    shape = RoundedCornerShape(16.dp),
-                    textStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp, textAlign = TextAlign.Center),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { onConfirm(code) }),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Dim("This replaces this device's pairing code.")
-            }
-        },
-        confirmButton = { Button(onClick = { onConfirm(code) }, shape = RoundedCornerShape(14.dp)) { Text("Pair") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    Text(
+        sas, fontFamily = FontFamily.Monospace, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold,
+        letterSpacing = 3.sp, color = cs.primary, textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.primary.copy(alpha = 0.10f))
+            .border(1.5.dp, cs.primary.copy(alpha = 0.6f), RoundedCornerShape(18.dp)).padding(vertical = 18.dp)
     )
 }
 
-// ---------- desktop-style chrome ----------
-/** Top brand row, like the desktop sidebar header: logo, gradient name and a live connection LED. */
+/** Another device wants to pair with this one: Accept or Decline. A new random pairing code is created for this pair only. */
 @Composable
-private fun BrandBar(connected: Int) {
+private fun PairRequestDialog(r: PairRequest) {
     val cs = MaterialTheme.colorScheme
-    val intro = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { intro.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow)) }
-    Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 18.dp, end = 18.dp, top = 8.dp, bottom = 2.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Image(
-            painterResource(R.drawable.logo), null,
-            Modifier.size(36.dp).graphicsLayer {
-                val v = intro.value
-                val sc = 0.55f + 0.45f * v
-                scaleX = sc; scaleY = sc; alpha = v.coerceIn(0f, 1f); rotationZ = (1f - v) * -80f
-            }.clip(RoundedCornerShape(11.dp)),
-            contentScale = ContentScale.Fit
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            "Y Connect",
-            style = TextStyle(brush = Brush.horizontalGradient(listOf(cs.primary, cs.tertiary)), fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.2.sp)
-        )
-        Spacer(Modifier.weight(1f))
-        val shape = RoundedCornerShape(20.dp)
-        Row(
-            Modifier.clip(shape).background(cs.surfaceContainer.copy(alpha = 0.78f)).border(1.dp, cs.outlineVariant, shape).animateContentSize().padding(horizontal = 11.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PulseDot(connected > 0)
-            Spacer(Modifier.width(7.dp))
-            Text(if (connected > 0) "$connected connected" else "Searching", fontSize = 12.sp, color = cs.onSurfaceVariant)
+    AlertDialog(
+        onDismissRequest = { Hub.declinePair() },
+        shape = RoundedCornerShape(28.dp),
+        icon = { IconBubble(KeyIcon, cs.primary, 52.dp) },
+        title = { Text("${r.name} wants to pair", textAlign = TextAlign.Center) },
+        text = {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Accept only if this number is the same on ${r.name}:", textAlign = TextAlign.Center)
+                if (r.sas.isNotEmpty()) CheckNumber(r.sas)
+                Dim("A new random pairing code is created for this pair only. Your other paired devices are not affected.")
+            }
+        },
+        confirmButton = { Button(onClick = { Hub.acceptPair() }, shape = RoundedCornerShape(14.dp)) { Text("Accept") } },
+        dismissButton = { TextButton(onClick = { Hub.declinePair() }) { Text("Decline") } }
+    )
+}
+
+// ---------- chrome (Cat Senpai look) ----------
+/** Slides in under the status bar while no device is connected, like Cat Senpai's connection banner. */
+@Composable
+private fun StatusBanner(connected: Int) {
+    val cs = MaterialTheme.colorScheme
+    AnimatedVisibility(connected == 0, enter = fadeIn() + expandVertically(), exit = fadeOut() + shrinkVertically()) {
+        Surface(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), RoundedCornerShape(14.dp), cs.secondaryContainer) {
+            Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = cs.onSecondaryContainer)
+                Text("Searching for devices on Wi-Fi…", Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodyMedium, color = cs.onSecondaryContainer)
+            }
         }
     }
 }
 
-/** Bottom navigation styled like the desktop tab rail: tinted pill, accent border and a glowing marker. */
+/** The app logo: spins and bounces in once, then drifts gently. */
 @Composable
-private fun RailBar(items: List<Triple<String, ImageVector, Int>>, selected: Int, onSelect: (Int) -> Unit) {
-    val cs = MaterialTheme.colorScheme
+private fun BrandLogo(size: Dp = 44.dp) {
+    val intro = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { intro.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow)) }
+    Image(
+        painterResource(R.drawable.logo), null,
+        Modifier.floating(3.dp).size(size).graphicsLayer {
+            val v = intro.value
+            val sc = 0.55f + 0.45f * v
+            scaleX = sc; scaleY = sc; alpha = v.coerceIn(0f, 1f); rotationZ = (1f - v) * -80f
+        }.clip(CircleShape),
+        contentScale = ContentScale.Crop
+    )
+}
+
+/** Bottom navigation: Material 3 bar whose icon pops in with a spring when its tab is picked. */
+@Composable
+private fun CatNavBar(items: List<Triple<String, ImageVector, Int>>, selected: Int, onSelect: (Int) -> Unit) {
     val haptic = LocalHapticFeedback.current
-    val barShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-    val pillShape = RoundedCornerShape(14.dp)
-    Row(
-        Modifier.fillMaxWidth().clip(barShape).background(cs.surfaceContainer.copy(alpha = 0.94f))
-            .border(1.dp, cs.outlineVariant, barShape).navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
         items.forEachIndexed { i, (label, ic, count) ->
-            val on = i == selected
-            val tint by animateColorAsState(if (on) cs.primary else cs.onSurfaceVariant, tween(150), label = "rail-tint")
-            val bar by animateFloatAsState(if (on) 1f else 0f, tween(180), label = "rail-bar")
-            val pop by animateFloatAsState(if (on) 1.14f else 1f, spring(dampingRatio = 0.45f, stiffness = 500f), label = "rail-pop")
-            Column(
-                Modifier.weight(1f).clip(pillShape)
-                    .background(Brush.verticalGradient(listOf(cs.primary.copy(alpha = 0.22f * bar), cs.primary.copy(alpha = 0.05f * bar))))
-                    .border(1.dp, cs.primary.copy(alpha = 0.30f * bar), pillShape)
-                    .clickable { if (!on) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSelect(i) } }
-                    .padding(top = 4.dp, bottom = 7.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(Modifier.width(18.dp).height(3.dp).clip(CircleShape).background(cs.primary.copy(alpha = bar)))
-                Spacer(Modifier.height(5.dp))
-                BadgedBox(
-                    badge = { if (count > 0) Badge { Text(count.toString()) } }
-                ) { Icon(ic, label, tint = tint, modifier = Modifier.size(22.dp).graphicsLayer { scaleX = pop; scaleY = pop }) }
-                Spacer(Modifier.height(3.dp))
-                Text(label, fontSize = 10.5.sp, maxLines = 1, color = tint, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium)
-            }
+            val sel = i == selected
+            NavigationBarItem(
+                selected = sel,
+                onClick = { if (!sel) { haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove); onSelect(i) } },
+                icon = {
+                    BadgedBox(badge = { if (count > 0) Badge { Text(if (count > 99) "99+" else count.toString()) } }) {
+                        AnimatedContent(
+                            sel,
+                            transitionSpec = { (scaleIn(Motion.bouncy(), 0.6f) + fadeIn(tween(120))) togetherWith fadeOut(tween(90)) },
+                            label = "tabicon"
+                        ) { _ -> Icon(ic, label) }
+                    }
+                },
+                label = { Text(label, maxLines = 1, fontSize = 11.sp) }
+            )
         }
     }
 }
@@ -587,72 +624,53 @@ fun YConnectApp(notifAccess: Boolean, onSendFiles: (String) -> Unit, onSendFolde
         Triple("Settings", Icons.Default.Settings, 0),
         Triple("About", Icons.Default.Info, if (update != null) 1 else 0),
     )
-    // another device tapped this one in its Nearby list: ask for the code it is showing
-    pairReq?.let { r ->
-        EnterCodeDialog(
-            title = "${r.name} wants to pair",
-            hint = "Enter the pairing code shown on ${r.name}.",
-            onDismiss = { Hub.dismissPairRequest() },
-            onConfirm = { if (usePairingCode(ctx, it)) Hub.dismissPairRequest() }
-        )
-    }
-    val glowA = cs.primary
-    val glowB = cs.tertiary
+    // another device tapped this one in its Nearby list: Accept or Decline
+    pairReq?.let { r -> PairRequestDialog(r) }
     Surface(Modifier.fillMaxSize(), color = cs.background, contentColor = cs.onBackground) {
-        Box(
-            Modifier.fillMaxSize().drawWithCache {
-                // soft aurora glow in the corners; the three gradients are built once per size / theme, not on every draw
-                val g1 = Brush.radialGradient(listOf(glowA.copy(alpha = 0.22f), Color.Transparent), center = Offset(0f, 0f), radius = size.width * 0.95f)
-                val g2 = Brush.radialGradient(listOf(glowB.copy(alpha = 0.18f), Color.Transparent), center = Offset(size.width, size.height), radius = size.width * 0.95f)
-                val g3 = Brush.radialGradient(listOf(Color(0xFF22D3EE).copy(alpha = 0.10f), Color.Transparent), center = Offset(size.width * 0.75f, 0f), radius = size.width * 0.7f)
-                onDrawBehind { drawRect(g1); drawRect(g2); drawRect(g3) }
-            }
-        ) {
-            Scaffold(
-                containerColor = Color.Transparent,
-                contentColor = cs.onBackground,
-                topBar = { BrandBar(peers.size) },
-                bottomBar = { RailBar(items, tab) { tab = it } }
-            ) { pad ->
-                val haptic = LocalHapticFeedback.current
-                val drag = remember { floatArrayOf(0f) }
-                // swipe left / right anywhere to move to the next / previous tab
-                Box(
-                    Modifier.fillMaxSize().pointerInput(tab) {
-                        detectHorizontalDragGestures(
-                            onDragStart = { drag[0] = 0f },
-                            onDragEnd = {
-                                val next = if (drag[0] < -140f) tab + 1 else if (drag[0] > 140f) tab - 1 else tab
-                                drag[0] = 0f
-                                if (next != tab && next in items.indices) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    tab = next
-                                }
-                            },
-                            onDragCancel = { drag[0] = 0f },
-                            onHorizontalDrag = { _, amount -> drag[0] += amount }
-                        )
-                    }
-                ) {
+        Scaffold(
+            containerColor = cs.background,
+            contentColor = cs.onBackground,
+            bottomBar = { CatNavBar(items, tab) { tab = it } }
+        ) { pad ->
+            val haptic = LocalHapticFeedback.current
+            val drag = remember { floatArrayOf(0f) }
+            val pagePad = PaddingValues(bottom = pad.calculateBottomPadding())
+            // swipe left / right anywhere to move to the next / previous tab
+            Column(
+                Modifier.fillMaxSize().padding(top = pad.calculateTopPadding()).pointerInput(tab) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { drag[0] = 0f },
+                        onDragEnd = {
+                            val next = if (drag[0] < -140f) tab + 1 else if (drag[0] > 140f) tab - 1 else tab
+                            drag[0] = 0f
+                            if (next != tab && next in items.indices) {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                tab = next
+                            }
+                        },
+                        onDragCancel = { drag[0] = 0f },
+                        onHorizontalDrag = { _, amount -> drag[0] += amount }
+                    )
+                }
+            ) {
+                StatusBanner(peers.size)
+                Box(Modifier.weight(1f).fillMaxWidth()) {
                     AnimatedContent(
                         targetState = tab,
                         transitionSpec = {
-                            // the new page slides in a little from the side you are moving towards while it fades in; the old one
-                            // slides out the other way. Only graphics layers move (no size animation), so it stays smooth.
                             val dir = if (targetState > initialState) 1 else -1
-                            (slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { (it * 0.12f).toInt() * dir } + fadeIn(tween(220, delayMillis = 50)))
-                                .togetherWith(slideOutHorizontally(tween(180, easing = FastOutSlowInEasing)) { -(it * 0.06f).toInt() * dir } + fadeOut(tween(110)))
-                                .using(null)
+                            (fadeIn(tween(240)) + slideInHorizontally(tween(300)) { dir * it / 8 })
+                                .togetherWith(fadeOut(tween(160)) + slideOutHorizontally(tween(300)) { -dir * it / 8 })
                         },
                         label = "tabs"
                     ) { t ->
                         when (t) {
-                            0 -> DevicesPage(pad, onSendFiles, onSendFolder)
-                            1 -> FilesPage(pad)
-                            2 -> RunPage(pad)
-                            3 -> ActivityPage(pad)
-                            4 -> SettingsPage(pad, notifAccess)
-                            else -> AboutPage(pad)
+                            0 -> DevicesPage(pagePad, onSendFiles, onSendFolder)
+                            1 -> FilesPage(pagePad)
+                            2 -> RunPage(pagePad)
+                            3 -> ActivityPage(pagePad)
+                            4 -> SettingsPage(pagePad, notifAccess)
+                            else -> AboutPage(pagePad)
                         }
                     }
                 }
@@ -671,21 +689,20 @@ private fun DevicesPage(pad: PaddingValues, onSendFiles: (String) -> Unit, onSen
     val settings by Hub.settings.collectAsState()
     val ctx = LocalContext.current
     var ip by remember { mutableStateOf("") }
-    var pairing by remember { mutableStateOf<Nearby?>(null) }
-    var enterManual by remember { mutableStateOf(false) }
+    val pairOut by Hub.pairOut.collectAsState()
     var unpairTarget by remember { mutableStateOf<Peer?>(null) }
-    // close the code dialog as soon as the other device has connected
-    LaunchedEffect(peers, pairing) {
-        val p = pairing
-        if (p != null && peers.any { it.id == p.id }) { toast(ctx, "Paired with ${p.name}"); pairing = null }
+    // close the waiting dialog as soon as the other device has connected
+    LaunchedEffect(peers, pairOut) {
+        val p = pairOut
+        if (p != null && peers.any { it.id == p.id }) { toast(ctx, "Paired with ${p.name}"); Hub.cancelPair() }
     }
     val startPair = { n: Nearby ->
-        if (Hub.sendPairRequest(n.id) != null) pairing = n else toast(ctx, "That device is no longer visible")
+        if (Hub.requestPair(n.id) == null) toast(ctx, "That device is no longer visible")
     }
     val live = liveTransferCount()
     var oldApps by remember { mutableStateOf(emptyList<LegacyApp.Found>()) }
     LaunchedEffect(Unit) { oldApps = withContext(Dispatchers.IO) { LegacyApp.find(ctx) } }
-    Page("Devices", if (ips.isEmpty()) "No Wi-Fi connection detected" else "This phone: " + ips.joinToString(", "), pad) {
+    Page("Devices", if (ips.isEmpty()) "No Wi-Fi connection detected" else "This phone: " + ips.joinToString(", "), pad, actions = { BrandLogo() }) {
         oldApps.forEach { old -> key(old.packageName) { Appear {
             Card("Old app still installed") {
                 Text("\"${old.label}\" is the previous version of this app. It is a separate app, so it keeps its old name and icon in your launcher.")
@@ -760,11 +777,14 @@ private fun DevicesPage(pad: PaddingValues, onSendFiles: (String) -> Unit, onSen
 
         SectionLabel("Nearby devices")
         Card {
-            Dim("Y Connect is open on these devices. Tap one to get a pairing code, then enter that code on the other device.")
-            if (nearby.isEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-                Radar(44.dp)
-                Spacer(Modifier.width(10.dp))
-                Dim("Scanning your network…")
+            Dim("Y Connect is open on these devices. Tap one to send a pairing request. The other device just taps Accept — no code to type.")
+            if (nearby.isEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Radar(44.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Dim("Scanning your network…")
+                }
+                SkeletonRow()
             }
             nearby.forEachIndexed { i, n -> key(n.id) { Appear(i * 50) {
                 Row(
@@ -780,11 +800,6 @@ private fun DevicesPage(pad: PaddingValues, onSendFiles: (String) -> Unit, onSen
                     Button(onClick = { startPair(n) }, shape = RoundedCornerShape(14.dp)) { Text("Pair") }
                 }
             } } }
-            OutlinedButton(onClick = { enterManual = true }, shape = RoundedCornerShape(14.dp)) {
-                Icon(KeyIcon, null, Modifier.size(17.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("I have a code")
-            }
         }
 
         Deferred(2) {
@@ -809,13 +824,14 @@ private fun DevicesPage(pad: PaddingValues, onSendFiles: (String) -> Unit, onSen
             shape = RoundedCornerShape(28.dp),
             icon = { IconBubble(UnlinkIcon, cs.error, 52.dp) },
             title = { Text("Unpair ${p.name}?") },
-            text = { Text("This device will disconnect and won't reconnect on its own. To pair again, tap it under Nearby devices.") },
+            text = { Text("This device will disconnect and its pairing code will be deleted on both devices. To pair again, tap it under Nearby devices.") },
             confirmButton = { Button(onClick = { Hub.unpair(p.id); unpairTarget = null; toast(ctx, "Unpaired ${p.name}") }, shape = RoundedCornerShape(14.dp)) { Text("Unpair") } },
             dismissButton = { TextButton(onClick = { unpairTarget = null }) { Text("Cancel") } }
         )
     }
-    pairing?.let { n ->
-        val cancel = { Hub.cancelPairRequest(n.id); pairing = null }
+    pairOut?.let { n ->
+        val bad = n.state != "waiting"
+        val cancel = { Hub.cancelPair() }
         AlertDialog(
             onDismissRequest = cancel,
             shape = RoundedCornerShape(28.dp),
@@ -823,31 +839,25 @@ private fun DevicesPage(pad: PaddingValues, onSendFiles: (String) -> Unit, onSen
             title = { Text("Pair with ${n.name}", textAlign = TextAlign.Center) },
             text = {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Enter this pairing code on ${n.name}:", textAlign = TextAlign.Center)
-                    Text(
-                        settings.passphrase, fontFamily = FontFamily.Monospace, fontSize = 32.sp, fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 3.sp, color = cs.primary, textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.primary.copy(alpha = 0.10f))
-                            .border(1.5.dp, cs.primary.copy(alpha = 0.6f), RoundedCornerShape(18.dp))
-                            .clickable { copyText(ctx, settings.passphrase) }.padding(vertical = 18.dp)
-                    )
-                    Dim("Tap the code to copy it.")
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        PulseDot(true)
+                    when {
+                        n.state == "declined" -> Text("${n.name} declined the request.", textAlign = TextAlign.Center)
+                        n.state == "failed" -> Text("Could not reach ${n.name}.", textAlign = TextAlign.Center)
+                        n.sas.isEmpty() -> Text("Contacting ${n.name}…", textAlign = TextAlign.Center)
+                        else -> {
+                            Text("Waiting for ${n.name} to accept. Make sure this number matches there:", textAlign = TextAlign.Center)
+                            CheckNumber(n.sas)
+                        }
+                    }
+                    if (!bad) Row(verticalAlignment = Alignment.CenterVertically) {
+                        TypingDots(MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(10.dp))
                         Dim("Waiting for ${n.name}…")
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = cancel) { Text("Cancel") } }
+            confirmButton = { TextButton(onClick = cancel) { Text(if (bad) "Close" else "Cancel") } }
         )
     }
-    if (enterManual) EnterCodeDialog(
-        title = "Enter pairing code",
-        hint = "Enter the pairing code shown on your other device.",
-        onDismiss = { enterManual = false },
-        onConfirm = { if (usePairingCode(ctx, it)) enterManual = false }
-    )
 }
 
 @Composable
@@ -910,7 +920,7 @@ private fun FilesPage(pad: PaddingValues) {
         else -> transfers
     }
     Page("Files", "Send with Share → Y Connect, or “File” on a device.", pad) {
-        Card {
+        Card(enterIndex = 0) {
             SettingRow(DownloadIcon, "Accept incoming files", "Saved to Downloads/YConnect", s.acceptFiles) { Hub.updateSettings(s.copy(acceptFiles = it)) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { ctx.startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }, shape = RoundedCornerShape(14.dp)) {
@@ -980,10 +990,8 @@ private fun SettingsPage(pad: PaddingValues, notifAccess: Boolean) {
     val ctx = LocalContext.current
     val s by Hub.settings.collectAsState()
     var name by remember(s.name) { mutableStateOf(s.name) }
-    var pass by remember(s.passphrase) { mutableStateOf(s.passphrase) }
-    var show by remember { mutableStateOf(false) }
-    Page("Settings", "Name this phone and set the shared pairing code.", pad) {
-        Card("Appearance") {
+    Page("Settings", "Name this phone and tune the look.", pad) {
+        Card("Appearance", enterIndex = 0) {
             Segmented(listOf("system" to "System", "light" to "Light", "dark" to "Dark"), s.theme) { Hub.updateSettings(s.copy(theme = it)) }
             ToggleRow(
                 "Use system colors",
@@ -991,35 +999,42 @@ private fun SettingsPage(pad: PaddingValues, notifAccess: Boolean) {
                 s.systemColors && android.os.Build.VERSION.SDK_INT >= 31
             ) { Hub.updateSettings(s.copy(systemColors = it)) }
         }
-        Card("This device") {
+        Card("This device", enterIndex = 1) {
             OutlinedTextField(name, { name = it }, label = { Text("Device name") }, singleLine = true, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(
-                pass, { pass = it }, label = { Text("Pairing code (same on every device)") }, singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth()
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = {
-                    if (name.isNotBlank() && pass.isNotBlank()) { Hub.updateSettings(s.copy(name = name.trim(), passphrase = pass.trim())); toast(ctx, "Saved") }
-                }, shape = RoundedCornerShape(14.dp)) { Text("Save") }
-                OutlinedButton(onClick = { show = !show }, shape = RoundedCornerShape(14.dp)) { Text(if (show) "Hide" else "Show") }
-                OutlinedButton(onClick = {
-                    val a = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-                    val r = java.security.SecureRandom()
-                    val c = (1..8).map { a[r.nextInt(a.length)] }.joinToString("")
-                    pass = c.take(4) + "-" + c.drop(4); show = true
-                }, shape = RoundedCornerShape(14.dp)) { Text("New") }
-                IconButton(onClick = { copyText(ctx, pass) }) { Icon(CopyIcon, "Copy code", tint = cs.primary) }
-            }
+            Button(onClick = {
+                if (name.isNotBlank()) { Hub.updateSettings(s.copy(name = name.trim())); toast(ctx, "Saved") }
+            }, shape = RoundedCornerShape(14.dp)) { Text("Save") }
         }
-        Deferred(1) { Card("Sync") {
+        Deferred(1) { Card("Sync", enterIndex = 0) {
             SettingRow(ClipboardIcon, "Clipboard sync", "Copy here, paste anywhere", s.clipboardSync) { Hub.updateSettings(s.copy(clipboardSync = it)) }
             SettingRow(BellIcon, "Notifications", "Send this phone's notifications and show your other devices'", s.notifySync) { Hub.updateSettings(s.copy(notifySync = it)) }
             SettingRow(BatteryIcon, "Battery level", "Share this phone's battery and show your other devices'", s.batterySync) { Hub.updateSettings(s.copy(batterySync = it)) }
             SettingRow(ClipboardIcon, "Send clipboard automatically", "Phone → computer without tapping. Needs “Display over other apps”.", s.autoClipboard) { Hub.updateSettings(s.copy(autoClipboard = it)) }
         } }
-        Deferred(2) { Card("Permissions") {
+        Deferred(2) { Card("Storage sharing", enterIndex = 0) {
+            val canShare = StorageShare.supported
+            var granted by remember { mutableStateOf(StorageShare.hasAccess()) }
+            LaunchedEffect(Unit) { while (true) { granted = StorageShare.hasAccess(); delay(1000) } }
+            SettingRow(FolderIcon, "Share phone storage",
+                if (canShare) "Lets your paired computers show this phone's files as a drive. Off by default." else "Needs Android 11 or newer.",
+                s.shareStorage && canShare) { if (canShare) Hub.updateSettings(s.copy(shareStorage = it)) }
+            if (s.shareStorage && canShare) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("All files access", fontWeight = FontWeight.SemiBold)
+                        Dim(if (granted) "Granted." else "Android needs your OK before files can be shared.")
+                    }
+                    if (granted) Pill("Granted", OkGreen)
+                    else Button(onClick = {
+                        try { ctx.startActivity(Intent("android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION", Uri.parse("package:" + ctx.packageName))) }
+                        catch (_: Exception) { ctx.startActivity(Intent("android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION")) }
+                    }, shape = RoundedCornerShape(12.dp)) { Text("Allow") }
+                }
+                SettingRow(FolderIcon, "Allow changes", "Let the computer also write, rename and delete files. Off = read only.", s.storageWrite) { Hub.updateSettings(s.copy(storageWrite = it)) }
+                Dim("On the computer open Devices and press “Mount storage” on this phone. Traffic stays encrypted with this pair's key.")
+            }
+        } }
+        Deferred(2) { Card("Permissions", enterIndex = 0) {
             if (s.autoClipboard) {
                 val overlayOk by ClipboardWatcher.overlayGranted.collectAsState()
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1151,7 +1166,7 @@ private fun UpdateCard() {
         }
     }
 
-    Card("Updates") {
+    Card("Updates", enterIndex = 1) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 10.dp)) {
                 Text(if (newer != null) "${newer.tag} is available" else "You have $current", fontWeight = FontWeight.SemiBold)
@@ -1195,7 +1210,7 @@ private fun AboutPage(pad: PaddingValues) {
     val ctx = LocalContext.current
     val version = remember { Updates.currentVersion(ctx) }
     Page("About", "Version $version", pad) {
-        Card {
+        Card(enterIndex = 0) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(painterResource(R.drawable.logo), "Y Connect", Modifier.size(68.dp).clip(RoundedCornerShape(18.dp)), contentScale = ContentScale.Fit)
                 Spacer(Modifier.width(14.dp))
@@ -1207,7 +1222,7 @@ private fun AboutPage(pad: PaddingValues) {
                     Dim("Notifications, clipboard and files between your devices over Wi-Fi. No cloud, no account.")
                 }
             }
-            Dim("Everything is end-to-end encrypted with AES-256-GCM using a key derived from your pairing code.")
+            Dim("Everything is end-to-end encrypted with AES-256-GCM using a key derived from a random pairing code that is created for each pair of devices.")
         }
         UpdateCard()
         Deferred(1) { DeviceInfoCard() }

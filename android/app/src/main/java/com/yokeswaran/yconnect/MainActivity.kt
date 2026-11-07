@@ -30,29 +30,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import java.util.Locale
 
-internal val OkGreen = Color(0xFF3FB26B)
-
-// Fallback palettes for Android 8-11 (Android 12+ uses Material You wallpaper colours instead).
-private val YConnectDark = darkColorScheme(
-    primary = Color(0xFF5AA5F0), onPrimary = Color(0xFF04121F),
-    primaryContainer = Color(0xFF1F4E82), onPrimaryContainer = Color(0xFFD3E5FF),
-    secondary = Color(0xFF9FB4D6), tertiary = Color(0xFFA855F7), onTertiary = Color(0xFF2A0F4A),
-    background = Color(0xFF0A0C12), onBackground = Color(0xFFF3F5FA),
-    surface = Color(0xFF0A0C12), onSurface = Color(0xFFF3F5FA),
-    surfaceVariant = Color(0xFF232837), surfaceContainer = Color(0xFF1B202C), onSurfaceVariant = Color(0xFF9AA3B5),
-    outline = Color(0xFF5B6680), outlineVariant = Color(0xFF272D3D),
-    error = Color(0xFFF87171),
-)
-private val YConnectLight = lightColorScheme(
-    primary = Color(0xFF2563C4), onPrimary = Color.White,
-    primaryContainer = Color(0xFFD3E5FF), onPrimaryContainer = Color(0xFF0B1F36),
-    secondary = Color(0xFF52627E), tertiary = Color(0xFF7C3AED), onTertiary = Color.White,
-    background = Color(0xFFEEF1F8), onBackground = Color(0xFF161A26),
-    surface = Color(0xFFEEF1F8), onSurface = Color(0xFF161A26),
-    surfaceVariant = Color(0xFFDDE3F0), surfaceContainer = Color.White, onSurfaceVariant = Color(0xFF5B6475),
-    outline = Color(0xFF8A93AD), outlineVariant = Color(0xFFD5DBE9),
-    error = Color(0xFFC62828),
-)
+internal val OkGreen = StatusOnline
 
 internal fun fmtSize(b: Long): String {
     if (b < 1024) return "$b B"
@@ -112,8 +90,8 @@ class MainActivity : ComponentActivity() {
             val ctx = LocalContext.current
             val scheme = when {
                 st.systemColors && Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-                dark -> YConnectDark
-                else -> YConnectLight
+                dark -> CatDark
+                else -> CatLight
             }
             // keep status/navigation bar icons readable when the app theme differs from the system theme
             androidx.compose.runtime.DisposableEffect(dark) {
@@ -124,7 +102,7 @@ class MainActivity : ComponentActivity() {
                 )
                 onDispose {}
             }
-            MaterialTheme(colorScheme = scheme) {
+            MaterialTheme(colorScheme = scheme, shapes = CatShapes, typography = catTypography()) {
                 YConnectApp(
                     notifAccess.value,
                     onSendFiles = { id ->

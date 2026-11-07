@@ -23,7 +23,7 @@ function isNewer(latest, current) {
 }
 
 /**
- * @param {string} current  this app's version, e.g. "v1.1"
+ * @param {string} current  this app's version, e.g. "v1.2"
  * @param {(url: string, opts: object) => Promise<Response>} fetchFn  Electron's net.fetch (or any fetch)
  * @returns {Promise<{ok: boolean, current: string, latest?: string, newer?: boolean, url?: string, notes?: string, error?: string}>}
  */

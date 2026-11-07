@@ -8,7 +8,7 @@
 
 Notifications · Clipboard · File transfer · Battery status · Remote commands
 
-![Version](https://img.shields.io/badge/version-v1.1-2f81f7)
+![Version](https://img.shields.io/badge/version-v1.2-2f81f7)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 ![Platforms](https://img.shields.io/badge/platforms-Android%20%7C%20Linux%20%7C%20Windows-3ddc84)
 
@@ -20,6 +20,8 @@ Hi, I'm Yokeswaran N, an 18-year-old student. I made Y Connect, inspired by [KDE
 
 If you find an issue, feel free to contact me on [Discord](https://discord.com/users/895560596064464956) or [Reddit](https://www.reddit.com/user/yokeswaran_n), or [report it on GitHub](https://github.com/Yokeswaran4/Y-Connect/issues). You can also browse the [source repository](https://github.com/Yokeswaran4/Y-Connect) or get the latest builds from [Releases](https://github.com/Yokeswaran4/Y-Connect/releases).
 
+So far, the app has been tested on Android and Arch Linux, using GNOME and niri on Wayland. Testing on Arch Linux rolling, Windows 11, Android 16 and Debian 13 is planned for future releases; those environments are not claimed as tested yet.
+
 **Website:** the project page lives in [`docs/`](docs/) and is served with GitHub Pages (Settings → Pages → Deploy from a branch → `/docs`).
 
 ## Table of contents
@@ -27,31 +29,34 @@ If you find an issue, feel free to contact me on [Discord](https://discord.com/u
 1. [What's new](#whats-new)
 2. [Overview](#overview)
 3. [Features](#features)
-4. [Downloads](#downloads)
-5. [Requirements](#requirements)
-6. [Building from source](#building-from-source)
-7. [Pairing your devices](#pairing-your-devices)
-8. [Android one-time setup](#android-one-time-setup)
-9. [Using the app](#using-the-app)
-10. [File transfer](#file-transfer)
-11. [Battery and connection latency](#battery-and-connection-latency)
-12. [Remote commands](#remote-commands)
-13. [Security and privacy](#security-and-privacy)
-14. [Network and firewall](#network-and-firewall)
-15. [Protocol reference](#protocol-reference)
-16. [Settings and configuration](#settings-and-configuration)
-17. [Troubleshooting](#troubleshooting)
-18. [Theming](#theming)
-19. [Project structure](#project-structure)
-20. [Tech stack and credits](#tech-stack-and-credits)
-21. [Made with AI](#made-with-ai)
-22. [License](#license)
-23. [Contact](#contact)
+4. [Screenshots](#screenshots)
+5. [Downloads](#downloads)
+6. [Requirements](#requirements)
+7. [Building from source](#building-from-source)
+8. [Pairing your devices](#pairing-your-devices)
+9. [Android one-time setup](#android-one-time-setup)
+10. [Using the app](#using-the-app)
+11. [File transfer](#file-transfer)
+12. [Battery and connection latency](#battery-and-connection-latency)
+13. [Remote commands](#remote-commands)
+14. [Security and privacy](#security-and-privacy)
+15. [Network and firewall](#network-and-firewall)
+16. [Protocol reference](#protocol-reference)
+17. [Settings and configuration](#settings-and-configuration)
+18. [Troubleshooting](#troubleshooting)
+19. [Theming](#theming)
+20. [Project structure](#project-structure)
+21. [Tech stack and credits](#tech-stack-and-credits)
+22. [Made with AI](#made-with-ai)
+23. [License](#license)
+24. [Contact](#contact)
 
 ---
 
 ## What's new
 
+- **Mount your phone's storage (v1.2).** On the computer press **Mount storage** on a connected phone and its files appear as a drive (Windows) or network location (Linux). The phone has to allow it first: *Settings → Storage sharing → Share phone storage* (off by default, needs Android 11+ and "All files access"). It is read-only until you also switch on **Allow changes**. The computer runs a small WebDAV server that listens on `127.0.0.1` only, behind a random secret in the address, and relays every request over the same encrypted link as everything else, so nothing travels in clear text. Linux uses `gio mount` (gvfs); if it is missing, the address is copied so you can connect to it in your file manager. Windows needs the *WebClient* service and limits file downloads to 50 MB per file unless you raise `FileSizeLimitInBytes` in the registry.
+- **New Android look (v1.2).** The Android app now follows Cat Senpai's design (tonal rounded cards, Material bottom bar, spring animations) in the default Y Connect blue.
 - **Android animations.** Tabs slide and fade in the direction you move, cards rise in one after another, counters roll when their number changes, the bottom bar icon pops when selected, and the logo spins in on start. Only graphics layers are animated, so it stays smooth on slower phones. Back gestures use Android's predictive back animation.
 - **Leftovers from the old name are cleaned up.** The desktop app removes old menu entries, startup entries and icons and refreshes the icon cache. The Android app shows an *Uninstall* card on the Devices page if the old app is still installed.
 - **Check for updates.** Android: *About → Updates*. Linux and Windows: *Settings → About & updates*. "Check now" asks GitHub for the latest release. The switch **Notify me about new releases** (off by default) checks about once a day and shows one notification per new version. This is the only feature that uses the internet; it sends nothing about you or your devices.
@@ -81,22 +86,37 @@ Y Connect links Android phones, Linux computers and Windows computers on the sam
 | Remote commands | Run commands from Android on a paired Linux or Windows computer. This is off by default. |
 | Privacy | No cloud service, relay, or account is required. |
 
+## Screenshots
+
+The sample screenshots below are included in the repository under [`assets/`](assets/).
+
+<details>
+<summary>Show Android and desktop screenshots</summary>
+
+| Android | Desktop |
+|---|---|
+| <img src="assets/android/1.jpg" alt="Android Devices screen showing discovery and pairing" width="240"> | <img src="assets/arch/1.png" alt="Desktop Devices screen showing nearby devices" width="480"> |
+| <img src="assets/android/2.jpg" alt="Android connected-device card with latency details" width="240"> | <img src="assets/arch/3.png" alt="Desktop Devices screen with a connected Android device" width="480"> |
+| <img src="assets/android/3.jpg" alt="Android file transfer screen" width="240"> | <img src="assets/arch/2.png" alt="Desktop nearby device and Connect by IP panels" width="480"> |
+
+</details>
+
 ## Downloads
 
 Get the latest builds from **[Y Connect Releases](https://github.com/Yokeswaran4/Y-Connect/releases)**.
 
 | File | Platform | Description |
 |---|---|---|
-| `Y-Connect-v1.1.apk` | Android 10 (API 29) or newer | Installable Android package. |
-| `Y-Connect-v1.1.AppImage` | Linux (x64) | Desktop app. Make it executable before starting it. |
-| `Y-Connect-Setup-v1.1.exe` | Windows | Installer. |
-| `Y-Connect-Portable-v1.1.exe` | Windows | Portable build that needs no installation. |
+| `Y-Connect-v1.2.apk` | Android 10 (API 29) or newer | Installable Android package. |
+| `Y-Connect-v1.2.AppImage` | Linux (x64) | Desktop app. Make it executable before starting it. |
+| `Y-Connect-Setup-v1.2.exe` | Windows | Installer. |
+| `Y-Connect-Portable-v1.2.exe` | Windows | Portable build that needs no installation. |
 
 Run the AppImage:
 
 ```bash
-chmod +x Y-Connect-v1.1.AppImage
-./Y-Connect-v1.1.AppImage
+chmod +x Y-Connect-v1.2.AppImage
+./Y-Connect-v1.2.AppImage
 ```
 
 When installing the APK outside Google Play, Play Protect may show a warning or block installation. Keep Play Protect enabled: confirm the APK came from the official Releases page, compare its SHA-256 checksum with the one published in the release notes, and review the permissions Android requests. If Play Protect still blocks the APK, do not bypass the warning; cancel the installation and wait for a verified build or contact the author.
@@ -130,9 +150,9 @@ npm start            # run directly to test
 Build a distributable (build each platform on its own operating system where possible):
 
 ```bash
-npm run dist:linux   # Linux AppImage    -> dist/Y-Connect-v1.1.AppImage
-npm run dist:win     # Windows installer -> dist/Y-Connect-Setup-v1.1.exe
-                     # Windows portable  -> dist/Y-Connect-Portable-v1.1.exe
+npm run dist:linux   # Linux AppImage    -> dist/Y-Connect-v1.2.AppImage
+npm run dist:win     # Windows installer -> dist/Y-Connect-Setup-v1.2.exe
+                     # Windows portable  -> dist/Y-Connect-Portable-v1.2.exe
 ```
 
 Building the Windows files on Linux can need Wine. If that fails, build on a Windows computer instead.
@@ -170,7 +190,7 @@ gradle wrapper --gradle-version 8.9    # once
 ./gradlew assembleDebug
 ```
 
-The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. Rename it to `Y-Connect-v1.1.apk` when you publish it.
+The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`. Rename it to `Y-Connect-v1.2.apk` when you publish it.
 
 > **Smoothness:** debug builds are noticeably slower because Jetpack Compose isn't optimised in them. For day-to-day use, build the release variant instead (`gradle assembleRelease`, or **Build > Select Build Variant > release** in Android Studio). It is optimised with R8 and signed with the debug key so it installs directly. The APK is at `android/app/build/outputs/apk/release/app-release.apk`.
 
@@ -188,10 +208,10 @@ The workflow in `.github/workflows/build.yml` builds the Android APK, the Linux 
 
 1. Connect all devices to the **same Wi-Fi or LAN** and open Y Connect on each.
 2. Open **Devices**. Other Y Connect devices on the network appear under **Nearby devices**.
-3. Select the device you want to pair with. This device displays a pairing code, and the other device asks you to enter it.
+3. Select the device you want to pair with. Both devices show the same 6-digit check number; on the other device, confirm it matches and tap **Accept** (or **Decline**).
 4. Enter the displayed code on the other device and press **Pair**.
 
-If you miss the pairing prompt, choose **I have a code** under Nearby devices or enter the code in **Settings**. The pairing code is never sent over the network; only a request to ask for the code is sent. Entering a new code replaces the current one, so use the same code on every device you want to connect.
+There is no code to type. When the request is accepted, a new random pairing code is created for that pair of devices only and stored on both. Unpairing one device deletes only that pair's code, so your other devices are not affected, and pairing again creates a fresh code. Devices paired with earlier versions (one shared code) must be paired again once.
 
 To disconnect a device and stop it reconnecting, select **Unpair** on its device card. The device appears under Nearby devices again and can be paired later.
 
@@ -215,7 +235,7 @@ If automatic discovery does not work (for example on guest Wi-Fi or a network wi
 | **Transfers** | View active and completed file transfers. |
 | **Sync** | Configure clipboard, notifications, battery sharing, incoming files, and remote control. |
 | **Activity** | Review recent connection, notification, clipboard, and error events. |
-| **Settings** | Configure theme, startup behavior, device name, pairing code, and other device options. |
+| **Settings** | Configure theme, startup behavior, device name, and other device options. |
 | **Contact / Licenses** | Contact links, the project license, and third-party notices. |
 
 ### Android tabs
@@ -242,7 +262,7 @@ Android 10 and newer restrict background clipboard reads. Optional automatic sen
 
 ## File transfer
 
-File transfer works in every direction (Android ⇄ desktop and desktop ⇄ desktop) and supports any file type. Files are encrypted with the pairing-code key and sent directly over the LAN.
+File transfer works in every direction (Android ⇄ desktop and desktop ⇄ desktop) and supports any file type. Files are encrypted with the pair's key and sent directly over the LAN.
 
 | Sender | How to send |
 |---|---|
@@ -263,9 +283,10 @@ Latency is measured over the encrypted connection. The app shows current and his
 
 ## Remote commands
 
-The Android **Run** tab can run a command on a paired Linux or Windows computer and show its output. Remote commands are **off by default**; on the computer, enable **Sync → Remote control from your phone → Allow commands from phone** to use them.
+The Android **Run** tab has a terminal and can run commands on a paired Linux or Windows computer and show its output. Remote commands are **off by default**; on the computer, enable **Sync → Remote control from your phone → Allow commands from phone** to use them.
 
-- Commands run as the normal user, never elevated, with stdin closed and a selectable timeout (30, 60 or 120 seconds). Output is capped at 48 KB.
+- **Terminal mode** opens a shell that stays open on the computer (cd, variables and running programs carry over), streams the output live, and has Ctrl+C, history, Clear and Copy. You send whole lines; every line goes through the same checks as a one-off command. A terminal nobody types in for 30 minutes is closed, and at most two can be open at once. Windows terminals use pipes (no Ctrl+C; close and reopen to stop a program).
+- One-off commands run as the normal user, never elevated, with stdin closed and a selectable timeout (30 seconds up to 10 minutes). Output is capped at 512 KB per stream, up to 6 commands run at once, and a command can be up to 16,000 characters.
 - Requests are accepted only from a paired Android device and appear in **Activity** on the computer.
 - Delete commands (including `rm`, `del`, `Remove-Item` and similar) and common elevation commands (`sudo`, `su`, `runas` and similar) are refused.
 - Saved and recent commands are stored on the phone.
@@ -275,13 +296,13 @@ The delete and elevation checks are guard rails, **not a security sandbox**. A d
 
 ## Security and privacy
 
-- WebSocket messages and file-transfer data are encrypted with AES-256-GCM. The key is derived from the pairing code using PBKDF2-SHA256.
-- Pairing codes are not broadcast or transmitted as part of the pairing request. Messages from devices that use a different code cannot be decrypted and are dropped.
+- WebSocket messages and file-transfer data are encrypted with AES-256-GCM. The key is derived from the pair's random pairing code using PBKDF2-SHA256.
+- Each pair of devices has its own random 80-bit pairing code. It is handed over once, when the other device taps Accept, encrypted with a key from a temporary ECDH (P-256) exchange; both screens show a check number derived from that exchange so a device in the middle would be noticed. Messages from devices without the pair's code cannot be decrypted and are dropped.
 - Device discovery uses UDP broadcast, and data connections are made directly between devices. The app does not require a cloud service, relay, or account.
 - Received file paths are sanitized, files are not overwritten, and data beyond the announced file size is rejected.
 - Debug reports omit clipboard text, notification text, IP addresses, serial numbers, and the pairing code.
 
-Pair only with devices you trust and use a strong, non-obvious pairing code if you set one yourself. Anyone on the local network who knows the code can communicate with your devices.
+Pair only with devices you trust, and only tap Accept if the check number matches on both devices.
 
 ## Network and firewall
 
@@ -302,7 +323,7 @@ Guest networks and routers with client/AP isolation may block device-to-device t
 
 ## Protocol reference
 
-Devices discover one another with UDP broadcasts on port 48999 every 3 seconds. A beacon contains the app identifier (`yconnect`), device ID, name, platform, and WebSocket port. Pairing requests are sent directly by UDP and do not contain the pairing code.
+Devices discover one another with UDP broadcasts on port 48999 every 3 seconds. A beacon contains the app identifier (`yconnect`), device ID, name, platform, and WebSocket port. Pairing requests are sent over the WebSocket connection and the pairing code is never sent unencrypted.
 
 The encrypted transport uses WebSocket on TCP port 48998. Each text frame contains base64-encoded `iv[12] + ciphertext + tag[16]` for a JSON message. The key is derived using `PBKDF2-SHA256(UPPERCASE(code without symbols), "y-connect-v1", 100000 iterations, 32 bytes)`.
 
@@ -318,6 +339,7 @@ The encrypted transport uses WebSocket on TCP port 48998. Each text frame contai
 | `file-offer` / `file-accept` / `file-reject` | Negotiate a file transfer |
 | Binary frames / `file-end` / `file-ack` | Transfer encrypted chunks and finish or acknowledge a file |
 | `file-cancel` | Cancel a transfer |
+| `fs-info` / `fs-stat` / `fs-list` / `fs-read` / `fs-write` / `fs-mkdir` / `fs-del` / `fs-move` → `fs-res` | Phone storage mount (computer asks, phone answers; see `desktop/storage.js`) |
 
 File data is sent in encrypted binary frames containing a transfer ID and up to 64 KiB of data. Optional transfer identifiers and offsets support resuming interrupted files. Receivers sanitize each path component and reject data beyond the announced size.
 
@@ -329,7 +351,7 @@ Desktop settings are stored in `config.json` in Electron's user-data directory. 
 |---|---|---|
 | Device ID | Random UUID | Identifies this device |
 | Device name | Operating-system hostname | Name shown to other devices |
-| Pairing code | Randomly generated | Shared encryption secret |
+| Pairing code | Randomly generated per pair of devices | Encryption secret of that pair |
 | Clipboard sync | On | Enable clipboard synchronization |
 | Notification sync | On | Send and show notifications |
 | Battery sharing | On | Share battery status |
@@ -346,8 +368,8 @@ Desktop settings are stored in `config.json` in Electron's user-data directory. 
 - Confirm all devices are on the same Wi-Fi or LAN and Y Connect is open.
 - Check that TCP **48998** and UDP **48999** are allowed through the firewall.
 - Guest Wi-Fi and AP/client isolation can block device discovery or connections. Try **Connect by IP** on a network that permits local traffic.
-- If pairing was missed, choose **I have a code** and enter the code shown on the other device.
-- If devices appear but nothing syncs, they probably use different pairing codes. Re-enter the same code on both devices. Check that every device runs the same Y Connect version.
+- If you missed the pairing prompt, tap the device under Nearby devices again.
+- If devices appear but nothing syncs, one of them may have been unpaired. Unpair and pair them again. Check that every device runs the same Y Connect version.
 
 </details>
 
@@ -412,7 +434,7 @@ Y-Connect/
 ├── README.md                       This documentation
 ├── LICENSE                         GNU General Public License v3
 ├── THIRD-PARTY-NOTICES.txt         Licenses of the components Y Connect uses
-├── assets/                         Project logo
+├── assets/                         Logo and sample screenshots used in this README
 ├── .github/workflows/build.yml     CI build for Android, Linux and Windows
 │
 ├── desktop/                        Electron app (Linux and Windows)

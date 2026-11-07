@@ -21,21 +21,22 @@ const crypto = require('crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const transfer = require('./transfer');
 const remote = require('./remote');
+const storage = require('./storage');
 const battery = require('./battery');
 const autostart = require('./autostart');
 const deviceinfo = require('./deviceinfo');
 const updates = require('./updates');
 const legacy = require('./legacy');
+const pc = require('./paircrypto');
 const latency = require('./latency').create({
   ids: () => [...peers.keys()],
   send: (id, obj) => { const p = peers.get(id); if (p) sendTo(p.ws, obj); },
   onChange: (id) => { if (win && !win.isDestroyed()) win.webContents.send('latency', id, latency.stats(id)); },
 });
 
-const VERSION_LABEL = 'v1.1';
+const VERSION_LABEL = 'v1.2';
 const WS_PORT = 48998;
 const UDP_PORT = 48999;
-const SALT = 'y-connect-v1';
 const MAX_CLIP = 1024 * 1024;
 const ICON = path.join(__dirname, 'build', 'icon.png');
 
@@ -70,7 +71,7 @@ function integrateDesktop() {
 }
 
 let win = null, tray = null, wss = null, udp = null;
-let key = null, config = null, lastClip = '', pushTimer = null;
+let config = null, lastClip = '', pushTimer = null;
 let logEntries = [];
 let autostartError = null; // { why, fix } when the last attempt to change launch-on-startup failed
 const startHidden = process.argv.includes('--hidden');
@@ -80,17 +81,14 @@ const peers = new Map();   // device id -> { ws, info }
 const pending = new Set(); // outgoing connections in progress
 const nearby = new Map();  // device id -> { id, name, platform, address, port, seen }  (every Y Connect heard on the LAN)
 const NEARBY_TTL = 10000;
-let pairRequest = null;    // { id, name, address, time } - another device wants to pair with us
+let pairRequest = null;    // { id, name, address, sas, time, ws } - another device wants to pair with us (waiting for Accept / Decline)
+let pairOut = null;        // { id, name, sas, state, ws } - we asked another device to pair; state: waiting | declined | failed
+const pairKeys = new Map(); // paired device id -> AES key (derived from that pair's own random code)
+const waitingSince = new Map(); // paired device id -> when we first heard it while not connected
 let nearbySig = '';
 const myPlatform = () => (process.platform === 'win32' ? 'windows' : 'linux');
 
 /* ---------- config ---------- */
-function randomCode() {
-  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let s = '';
-  for (let i = 0; i < 8; i++) s += a[crypto.randomInt(a.length)];
-  return s.slice(0, 4) + '-' + s.slice(4);
-}
 function loadConfig() {
   const file = path.join(app.getPath('userData'), 'config.json');
   let saved = {};
@@ -98,7 +96,7 @@ function loadConfig() {
   config = Object.assign({
     id: crypto.randomUUID(),
     name: os.hostname(),
-    passphrase: randomCode(),
+    paired: {}, // device id -> { name, code }: one random pairing code per paired device
     clipboardSync: true,
     notifySync: true,
     acceptFiles: true,
@@ -108,12 +106,13 @@ function loadConfig() {
     allowCommands: false, // phone may run commands here (never with sudo/admin). Off until the user turns it on
     theme: 'system', // system | light | dark
     systemColors: true, // follow the OS accent colour; off = Y Connect blue
-    ignored: [], // ids of devices that were unpaired: never auto-connect to them
     autoUpdateCheck: false, // opt-in: look for a newer release about once a day and show a notification
     lastUpdateCheck: 0,
     notifiedVersion: '',
   }, saved);
-  if (!Array.isArray(config.ignored)) config.ignored = [];
+  if (!config.paired || typeof config.paired !== 'object' || Array.isArray(config.paired)) config.paired = {};
+  delete config.passphrase; // the single shared code of earlier versions is gone: every pair has its own code now
+  delete config.ignored;
   if (!['system', 'light', 'dark'].includes(config.theme)) config.theme = 'system';
   config.startHidden = config.startHidden !== false;
   delete config.allowRemove; // removing files from the phone no longer exists
@@ -128,35 +127,24 @@ function saveConfig() {
   } catch {}
 }
 
-/* ---------- crypto (AES-256-GCM, key from pairing code) ---------- */
-const norm = (p) => (String(p).toUpperCase().replace(/[^A-Z0-9]/g, '') || '-');
-function deriveKey() { key = crypto.pbkdf2Sync(norm(config.passphrase), SALT, 100000, 32, 'sha256'); }
-function encrypt(obj) {
-  const iv = crypto.randomBytes(12);
-  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const enc = Buffer.concat([c.update(JSON.stringify(obj), 'utf8'), c.final()]);
-  return Buffer.concat([iv, enc, c.getAuthTag()]).toString('base64');
+/* ---------- crypto (AES-256-GCM, key from the pairing code of that device pair) ---------- */
+function loadKeys() {
+  pairKeys.clear();
+  for (const [id, d] of Object.entries(config.paired)) {
+    if (d && pc.validCode(d.code)) pairKeys.set(id, pc.deriveKey(d.code));
+    else delete config.paired[id];
+  }
 }
-function decrypt(str) {
-  const b = Buffer.from(str, 'base64');
-  if (b.length < 29) throw new Error('short');
-  const d = crypto.createDecipheriv('aes-256-gcm', key, b.subarray(0, 12));
-  d.setAuthTag(b.subarray(b.length - 16));
-  return JSON.parse(Buffer.concat([d.update(b.subarray(12, b.length - 16)), d.final()]).toString('utf8'));
+function storePair(id, name, code) {
+  config.paired[id] = { name: String(name || 'Device').slice(0, 40), code };
+  pairKeys.set(id, pc.deriveKey(code));
+  saveConfig();
 }
-
-// binary frames (file data): iv[12] + ciphertext + tag[16]
-function encryptBin(buf) {
-  const iv = crypto.randomBytes(12);
-  const c = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const enc = Buffer.concat([c.update(buf), c.final()]);
-  return Buffer.concat([iv, enc, c.getAuthTag()]);
-}
-function decryptBin(b) {
-  if (b.length < 29) throw new Error('short');
-  const d = crypto.createDecipheriv('aes-256-gcm', key, b.subarray(0, 12));
-  d.setAuthTag(b.subarray(b.length - 16));
-  return Buffer.concat([d.update(b.subarray(12, b.length - 16)), d.final()]);
+function forgetPair(id) {
+  delete config.paired[id];
+  pairKeys.delete(id);
+  waitingSince.delete(id);
+  saveConfig();
 }
 
 /* ---------- state for the UI ---------- */
@@ -188,7 +176,8 @@ function accentColor() {
 }
 const bgColor = () => (nativeTheme.shouldUseDarkColors ? '#202020' : '#f3f3f3');
 function snapshot() {
-  return { config, peers: [...peers.values()].map((p) => ({ ...p.info, lat: latency.stats(p.info.id) })), nearby: nearbyList(), pairRequest, log: logEntries, ips: localIps(), version: VERSION_LABEL, accent: accentColor(), platform: process.platform, update: updateInfo && updateInfo.newer ? updateInfo : null, transfers: transfer.list(), autostart: { supported: autostart.supported, enabled: autostart.isEnabled(), hidden: config.startHidden !== false, error: autostartError } };
+  const { paired: _codes, ...publicConfig } = config; // pairing codes never go to the window
+  return { config: publicConfig, peers: [...peers.values()].map((p) => ({ ...p.info, lat: latency.stats(p.info.id) })), nearby: nearbyList(), mounts: storage.list(), pairRequest: pairRequest && { id: pairRequest.id, name: pairRequest.name, sas: pairRequest.sas }, pairOut: pairOut && { id: pairOut.id, name: pairOut.name, sas: pairOut.sas, state: pairOut.state }, log: logEntries, ips: localIps(), version: VERSION_LABEL, accent: accentColor(), platform: process.platform, update: updateInfo && updateInfo.newer ? updateInfo : null, transfers: transfer.list(), autostart: { supported: autostart.supported, enabled: autostart.isEnabled(), hidden: config.startHidden !== false, error: autostartError } };
 }
 function pushState() {
   if (pushTimer) return;
@@ -200,39 +189,51 @@ function pushState() {
 
 /* ---------- networking ---------- */
 const helloMsg = () => ({ type: 'hello', id: config.id, name: config.name, platform: myPlatform() });
-function sendTo(ws, obj) { try { if (ws.readyState === WebSocket.OPEN) ws.send(encrypt(obj)); } catch {} }
+const isPeerSocket = (ws) => [...peers.values()].some((p) => p.ws === ws);
+// Pairing frames (and "who are you" probes) are plain JSON. Everything else is base64 AES-GCM, which never starts with "{".
+function sendRaw(ws, obj) { try { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); } catch {} }
+function sendTo(ws, obj) { try { if (ws._key && ws.readyState === WebSocket.OPEN) ws.send(pc.seal(ws._key, JSON.stringify(obj))); } catch {} }
 function broadcast(obj) {
-  const data = encrypt(obj);
+  const text = JSON.stringify(obj);
   let n = 0;
-  for (const p of peers.values()) if (p.ws.readyState === WebSocket.OPEN) { p.ws.send(data); n++; }
+  for (const p of peers.values()) if (p.ws.readyState === WebSocket.OPEN && p.ws._key) { p.ws.send(pc.seal(p.ws._key, text)); n++; }
   return n;
-}
-function closeAll() {
-  for (const p of peers.values()) { try { p.ws.close(); } catch {} }
-  peers.clear();
-  pushState();
 }
 function dropSocket(ws) {
   transfer.onDisconnected(ws);
   remote.onDisconnected(ws);
+  storage.onDisconnected(ws);
+  if (pairRequest && pairRequest.ws === ws) { pairRequest = null; }
+  if (pairOut && pairOut.ws === ws && pairOut.state === 'waiting') pairOut.state = 'failed';
   for (const [id, p] of peers) {
     if (p.ws === ws) { peers.delete(id); latency.drop(id); addLog('link', 'Disconnected', p.info.name); }
   }
   pushState();
 }
-function attach(ws, addr) {
+/**
+ * mode: 'in' (someone connected to us), 'connect' (we dial a paired device: we know its key),
+ *       'pair' (we dial a device to ask it to pair), 'probe' (we dial an IP and ask who is there).
+ */
+function attach(ws, addr, o = {}) {
   ws._addr = String(addr || '?').replace(/^::ffff:/, '');
+  ws._mode = o.mode || 'in';
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (data, isBinary) => (isBinary ? handleBinary(ws, data) : handle(ws, data.toString())));
-  ws.on('close', () => dropSocket(ws));
+  ws.on('close', () => { clearTimeout(ws._life); dropSocket(ws); });
   ws.on('error', () => {});
-  sendTo(ws, helloMsg());
+  // a socket that never becomes a connected device (or finishes pairing) is closed
+  ws._life = setTimeout(() => { if (!isPeerSocket(ws)) { try { ws.close(); } catch {} } }, 60000);
+  if (ws._mode === 'connect') useKey(ws, o.id), sayHello(ws);
+  else if (ws._mode === 'pair') startPairOut(ws, o.id, o.name);
+  else if (ws._mode === 'probe') sendRaw(ws, { t: 'who' });
 }
+function useKey(ws, id) { ws._peerId = id; ws._key = pairKeys.get(id); }
+function sayHello(ws) { ws._helloSent = true; sendTo(ws, helloMsg()); }
 function handleBinary(ws, data) {
-  if (![...peers.values()].some((p) => p.ws === ws)) return;
+  if (!isPeerSocket(ws) || !ws._key) return;
   let plain;
-  try { plain = decryptBin(Buffer.isBuffer(data) ? data : Buffer.concat(data)); }
+  try { plain = pc.openBytes(ws._key, Buffer.isBuffer(data) ? data : Buffer.concat(data)); }
   catch { try { ws.close(); } catch {} return; }
   transfer.onBinary(ws, plain);
 }
@@ -342,30 +343,45 @@ function showNotification(appName, title, text, iconB64) {
   addLog('notif', t, text || '');
 }
 function handle(ws, raw) {
+  if (raw.charCodeAt(0) === 123) return handlePlain(ws, raw); // "{"
   let msg;
-  try { msg = decrypt(raw); } catch {
-    // Not decryptable: drop it silently. An unknown socket is closed; an already connected peer stays connected.
-    if (![...peers.values()].some((p) => p.ws === ws)) { try { ws.close(); } catch {} }
-    return;
+  if (!ws._key) {
+    // first encrypted frame on a socket someone opened to us: find out which paired device it is by whose key opens it
+    let who = null;
+    for (const [id, k] of pairKeys) { try { msg = JSON.parse(pc.open(k, raw)); who = id; break; } catch {} }
+    if (!who) { sendRaw(ws, { t: 'unknown' }); setTimeout(() => { try { ws.close(); } catch {} }, 300); return; }
+    useKey(ws, who);
+  } else {
+    try { msg = JSON.parse(pc.open(ws._key, raw)); } catch {
+      // Not decryptable: drop it silently. An unknown socket is closed; an already connected peer stays connected.
+      if (!isPeerSocket(ws)) { try { ws.close(); } catch {} }
+      return;
+    }
   }
   if (msg.type === 'hello') {
-    if (msg.id === config.id || isIgnored(msg.id)) { ws.close(); return; }
+    if (msg.id !== ws._peerId || msg.id === config.id) { try { ws.close(); } catch {} return; } // the key proves who it is
     const old = peers.get(msg.id);
     const isNew = !old || old.ws !== ws;
     if (old && old.ws !== ws) { peers.delete(msg.id); try { old.ws.close(); } catch {} }
-    peers.set(msg.id, { ws, info: { id: msg.id, name: String(msg.name || 'Device'), platform: String(msg.platform || '?'), address: ws._addr } });
-    if (isNew) { addLog('link', 'Connected', String(msg.name || 'Device')); latency.reset(msg.id); latency.ping(msg.id); setTimeout(() => transfer.onPeerConnected(msg.id), 1500); }
-    if (pairRequest && pairRequest.id === msg.id) pairRequest = null;
+    const name = String(msg.name || 'Device').slice(0, 40);
+    peers.set(msg.id, { ws, info: { id: msg.id, name, platform: String(msg.platform || '?').slice(0, 16), address: ws._addr } });
+    if (config.paired[msg.id] && config.paired[msg.id].name !== name) { config.paired[msg.id].name = name; saveConfig(); }
+    if (!ws._helloSent) sayHello(ws);
+    if (isNew) { addLog('link', 'Connected', name); latency.reset(msg.id); latency.ping(msg.id); setTimeout(() => transfer.onPeerConnected(msg.id), 1500); }
+    waitingSince.delete(msg.id);
+    if (pairOut && pairOut.id === msg.id) pairOut = null;
     nearbySig = '';
     sendBattery(ws);
     pushState();
     return;
   }
-  if (![...peers.values()].some((p) => p.ws === ws)) return;
+  if (!isPeerSocket(ws)) return;
   if (msg.type === 'unpair') {
-    for (const [id, p] of peers) {
-      if (p.ws === ws) { ignoreDevice(id); addLog('link', 'Unpaired by', p.info.name); }
-    }
+    const id = ws._peerId;
+    const p = peers.get(id);
+    forgetPair(id);
+    transfer.dropQueue(id);
+    addLog('link', 'Unpaired by', p ? p.info.name : 'a device');
     try { ws.close(); } catch {}
     return;
   }
@@ -373,6 +389,7 @@ function handle(ws, raw) {
   if (msg.type === 'pong') { if (Number.isFinite(msg.n)) for (const [id, p] of peers) if (p.ws === ws) latency.onPong(id, msg.n); return; }
   if (typeof msg.type === 'string' && msg.type.startsWith('file-')) { transfer.onMessage(ws, msg); return; }
   if (typeof msg.type === 'string' && msg.type.startsWith('cmd-')) { remote.onMessage(ws, msg); return; }
+  if (typeof msg.type === 'string' && msg.type.startsWith('fs-')) { storage.onMessage(ws, msg); return; }
   if (msg.type === 'clipboard') {
     if (!config.clipboardSync || typeof msg.text !== 'string' || !msg.text || msg.text.length > MAX_CLIP) return;
     lastClip = msg.text; // set first so the poller never echoes it back
@@ -393,17 +410,19 @@ function startServer() {
   wss.on('connection', (ws, req) => attach(ws, req.socket.remoteAddress));
   wss.on('error', (e) => addLog('warn', 'Server error', e.message));
 }
-function connectTo(host, port) {
+function dial(host, port, o, onFail) {
   const tag = host + ':' + port;
-  if (pending.has(tag)) return;
+  if (pending.has(tag)) return false;
   pending.add(tag);
   let ws;
   try { ws = new WebSocket('ws://' + host + ':' + port, { handshakeTimeout: 4000 }); }
-  catch { pending.delete(tag); return; }
-  ws.on('open', () => attach(ws, host));
+  catch { pending.delete(tag); if (onFail) onFail(); return false; }
+  ws.on('open', () => attach(ws, host, o));
   ws.on('close', () => { pending.delete(tag); dropSocket(ws); });
-  ws.on('error', () => { pending.delete(tag); });
+  ws.on('error', () => { pending.delete(tag); if (onFail) onFail(); });
+  return true;
 }
+const connectTo = (host, port, id) => dial(host, port, { mode: 'connect', id });
 
 /* ---------- battery ---------- */
 function sendBattery(ws) {
@@ -420,16 +439,19 @@ async function pollBattery() {
 }
 
 /* ---------- unpair ---------- */
-const isIgnored = (id) => config.ignored.includes(id);
-function ignoreDevice(id) { if (!isIgnored(id)) { config.ignored.push(id); saveConfig(); } }
-function unignoreDevice(id) { const i = config.ignored.indexOf(id); if (i >= 0) { config.ignored.splice(i, 1); saveConfig(); } }
+// Every pair has its own code, so unpairing one device only forgets that device's code. Nothing else is affected,
+// and pairing again simply creates a new random code.
+function forgetPeer(id, why) {
+  const p = peers.get(id);
+  forgetPair(id);
+  transfer.dropQueue(id);
+  if (why) addLog('link', why, p ? p.info.name : id);
+}
 function unpairDevice(id) {
   const p = peers.get(id);
   if (!p) return false;
-  sendTo(p.ws, { type: 'unpair' });   // tell the other side so it stops reconnecting as well
-  ignoreDevice(id);
-  transfer.dropQueue(id);
-  addLog('link', 'Unpaired', p.info.name);
+  sendTo(p.ws, { type: 'unpair' });   // tell the other side so it forgets this pair as well
+  forgetPeer(id, 'Unpaired');
   setTimeout(() => { try { p.ws.close(); } catch {} }, 150);
   return true;
 }
@@ -457,42 +479,136 @@ function noteNearby(j, rinfo) {
   nearby.set(id, { id, name: cleanStr(j.name, 40) || 'Device', platform: cleanStr(j.platform, 16) || 'device', address: rinfo.address, port: Number(j.port) || WS_PORT, seen: Date.now() });
   refreshNearby();
 }
-function udpSend(obj, address) {
-  if (!udp) return;
-  try { udp.send(Buffer.from(JSON.stringify(obj)), UDP_PORT, address, () => {}); } catch {}
+
+// Pairing, from the point of view of the device that asks ("out") ...
+function startPairOut(ws, id, name) {
+  if (pairOut && pairOut.ws && pairOut.ws !== ws) { try { pairOut.ws.close(); } catch {} }
+  const kp = pc.newKeyPair();
+  ws._pair = { role: 'out', id, name, kp };
+  pairOut = { id, name: name || 'Device', sas: '', state: 'waiting', ws };
+  sendRaw(ws, { t: 'pair-req', id: config.id, name: config.name, platform: myPlatform(), pub: kp.pub });
+  addLog('info', 'Pairing started', 'Waiting for ' + pairOut.name + ' to accept');
+  pushState();
 }
-// The pairing code itself is never sent over the network - the request only makes the other device ask for it.
-function sendPairRequest(id) {
+function requestPair(id) {
   const n = nearby.get(id);
   if (!n) return null;
-  unignoreDevice(id);
-  const msg = { app: 'yconnect', type: 'pair-request', id: config.id, name: config.name, platform: myPlatform() };
-  udpSend(msg, n.address);
-  setTimeout(() => udpSend(msg, n.address), 400); // UDP can drop packets
-  addLog('info', 'Pairing started', 'Enter the code on ' + n.name);
-  return { code: config.passphrase, name: n.name };
+  pairOut = { id, name: n.name, sas: '', state: 'waiting', ws: null };
+  const ok = dial(n.address, n.port, { mode: 'pair', id, name: n.name }, () => { if (pairOut && pairOut.id === id && !pairOut.ws && pairOut.state === 'waiting') { pairOut.state = 'failed'; pushState(); } });
+  if (!ok && pairOut && !pairOut.ws) pairOut.state = 'failed';
+  pushState();
+  return { name: n.name };
 }
-function cancelPair(id) {
-  const n = nearby.get(id);
-  if (n) udpSend({ app: 'yconnect', type: 'pair-cancel', id: config.id }, n.address);
+function cancelPair() {
+  const o = pairOut;
+  pairOut = null;
+  if (o && o.ws) { try { o.ws.close(); } catch {} }
+  pushState();
 }
-function onPairRequest(j, rinfo) {
-  const id = cleanStr(j.id, 64);
-  if (!id || peers.has(id)) return;
-  unignoreDevice(id);
-  if (pairRequest && pairRequest.id === id && Date.now() - pairRequest.time < 2000) return; // duplicate packet
-  pairRequest = { id, name: cleanStr(j.name, 40) || 'Device', address: rinfo.address, time: Date.now() };
-  addLog('info', 'Pairing request', pairRequest.name + ' wants to pair');
+// ... and of the device that is asked ("in").
+function onPairReq(ws, m) {
+  const id = cleanStr(m.id, 64);
+  if (!id || id === config.id || ws._pair || isPeerSocket(ws)) return;
+  if (pairOut && pairOut.id === id && pairOut.state === 'waiting') {
+    // both devices asked each other at the same moment: the one with the smaller id keeps its own request
+    if (config.id < id) { sendRaw(ws, { t: 'pair-decline' }); try { ws.close(); } catch {} return; }
+    cancelPair();
+  }
+  if (pairRequest) { sendRaw(ws, { t: 'pair-decline' }); try { ws.close(); } catch {} return; } // one question at a time
+  let kp, secret;
+  try { kp = pc.newKeyPair(); secret = pc.agree(kp.priv, m.pub); } catch { try { ws.close(); } catch {} return; }
+  const name = cleanStr(m.name, 40) || 'Device';
+  ws._pair = { role: 'in', id, name, secret, accepted: false };
+  pairRequest = { id, name, address: ws._addr, sas: pc.checkNumber(secret, m.pub, kp.pub), time: Date.now(), ws };
+  sendRaw(ws, { t: 'pair-pub', pub: kp.pub });
+  addLog('info', 'Pairing request', name + ' wants to pair');
   if (Notification.isSupported()) {
-    const n = new Notification({ title: pairRequest.name + ' wants to pair', body: 'Enter the pairing code shown on ' + pairRequest.name, icon: ICON });
+    const n = new Notification({ title: name + ' wants to pair', body: 'Open Y Connect to accept or decline', icon: ICON });
     n.on('click', showWindow);
     n.show();
   }
   showWindow();
   pushState();
 }
-function onPairCancel(j) {
-  if (pairRequest && pairRequest.id === cleanStr(j.id, 64)) { pairRequest = null; pushState(); }
+function acceptPair() {
+  const r = pairRequest;
+  if (!r || !r.ws || r.ws.readyState !== WebSocket.OPEN) { pairRequest = null; pushState(); return false; }
+  r.ws._pair.accepted = true;
+  sendRaw(r.ws, { t: 'pair-accept' });
+  pairRequest = null;
+  addLog('info', 'Pairing accepted', r.name);
+  pushState();
+  return true;
+}
+function declinePair() {
+  const r = pairRequest;
+  pairRequest = null;
+  if (r && r.ws) { sendRaw(r.ws, { t: 'pair-decline' }); setTimeout(() => { try { r.ws.close(); } catch {} }, 200); addLog('info', 'Pairing declined', r.name); }
+  pushState();
+}
+
+// plain (unencrypted) frames: only pairing and discovery of who is behind an address
+function handlePlain(ws, raw) {
+  let m;
+  try { m = JSON.parse(raw); } catch { return; }
+  if (!m || typeof m !== 'object' || isPeerSocket(ws)) return;
+  switch (m.t) {
+    case 'who': // someone dialled our IP and asks who we are
+      sendRaw(ws, { t: 'iam', id: config.id, name: config.name, platform: myPlatform() });
+      break;
+    case 'iam': { // answer to our probe: known device -> connect, new device -> ask it to pair
+      if (ws._mode !== 'probe') return;
+      const id = cleanStr(m.id, 64);
+      if (!id || id === config.id) { try { ws.close(); } catch {} return; }
+      if (pairKeys.has(id)) { ws._mode = 'connect'; useKey(ws, id); sayHello(ws); }
+      else { ws._mode = 'pair'; startPairOut(ws, id, cleanStr(m.name, 40) || 'Device'); }
+      break;
+    }
+    case 'unknown': // the device we dialled does not know us (it was unpaired there): forget it here too
+      if (ws._mode === 'connect' && ws._peerId) {
+        const name = (config.paired[ws._peerId] || {}).name || 'A device';
+        forgetPeer(ws._peerId, 'No longer paired');
+        addLog('info', 'Pair removed', name + ' no longer recognises this device. Pair again to reconnect.');
+        try { ws.close(); } catch {}
+      }
+      break;
+    case 'pair-req': onPairReq(ws, m); break;
+    case 'pair-pub': { // out: the other device sent its half of the key exchange
+      const pr = ws._pair;
+      if (!pr || pr.role !== 'out' || pr.secret) return;
+      try { pr.secret = pc.agree(pr.kp.priv, m.pub); } catch { try { ws.close(); } catch {} return; }
+      if (pairOut && pairOut.ws === ws) { pairOut.sas = pc.checkNumber(pr.secret, pr.kp.pub, m.pub); pushState(); }
+      break;
+    }
+    case 'pair-decline':
+      if (ws._pair && ws._pair.role === 'out' && pairOut && pairOut.ws === ws) { pairOut.state = 'declined'; addLog('info', 'Pairing declined', pairOut.name + ' declined'); pushState(); }
+      try { ws.close(); } catch {}
+      break;
+    case 'pair-accept': { // out: the other user tapped Accept -> create this pair's random code and hand it over
+      const pr = ws._pair;
+      if (!pr || pr.role !== 'out' || !pr.secret || pr.sent || !pairOut || pairOut.ws !== ws) return;
+      pr.sent = true;
+      const code = pc.randomCode();
+      sendRaw(ws, { t: 'pair-code', d: pc.seal(pc.transportKey(pr.secret), code) });
+      storePair(pr.id, pr.name, code);
+      useKey(ws, pr.id);
+      sayHello(ws);
+      addLog('info', 'Paired', pr.name);
+      break;
+    }
+    case 'pair-code': { // in: we accepted, now the code arrives
+      const pr = ws._pair;
+      if (!pr || pr.role !== 'in' || !pr.accepted || !pr.secret || pr.done) return;
+      let code;
+      try { code = pc.open(pc.transportKey(pr.secret), String(m.d || '')); } catch { try { ws.close(); } catch {} return; }
+      if (!pc.validCode(code)) { try { ws.close(); } catch {} return; }
+      pr.done = true;
+      storePair(pr.id, pr.name, code);
+      useKey(ws, pr.id);
+      addLog('info', 'Paired', pr.name);
+      break;
+    }
+  }
 }
 
 /* ---------- discovery (UDP broadcast) ---------- */
@@ -519,13 +635,15 @@ function startDiscovery() {
     try {
       const j = JSON.parse(buf.toString());
       if (j.app !== 'yconnect' || j.id === config.id) return;
-      if (j.type === 'pair-request') return onPairRequest(j, rinfo);
-      if (j.type === 'pair-cancel') return onPairCancel(j);
-      if (j.type) return; // unknown message from a newer version
+      if (j.type) return; // pairing now runs over the WebSocket; other types come from newer versions
       noteNearby(j, rinfo);
-      if (peers.has(j.id)) return;
-      // the device with the smaller id dials, so two devices never connect to each other twice
-      if (config.id < j.id && !isIgnored(j.id)) connectTo(rinfo.address, Number(j.port) || WS_PORT);
+      if (peers.has(j.id)) { waitingSince.delete(j.id); return; }
+      if (!pairKeys.has(j.id)) return; // not paired: it only shows up under Nearby
+      // the device with the smaller id dials, so two devices never connect to each other twice.
+      // If the smaller one stays silent for a while (it forgot this pair), the other one dials too and learns that.
+      const now = Date.now();
+      if (!waitingSince.has(j.id)) waitingSince.set(j.id, now);
+      if (config.id < j.id || now - waitingSince.get(j.id) > 9000) connectTo(rinfo.address, Number(j.port) || WS_PORT, j.id);
     } catch {}
   });
   udp.bind(UDP_PORT, () => { try { udp.setBroadcast(true); } catch {} beacon(); });
@@ -636,9 +754,8 @@ ipcMain.handle('get-licenses', () => {
   return out;
 });
 ipcMain.handle('set-config', (_e, patch) => {
-  const oldPass = norm(config.passphrase), oldName = config.name;
+  const oldName = config.name;
   if (typeof patch.name === 'string' && patch.name.trim()) config.name = patch.name.trim().slice(0, 40);
-  if (typeof patch.passphrase === 'string' && patch.passphrase.trim()) config.passphrase = patch.passphrase.trim().slice(0, 64);
   if (typeof patch.clipboardSync === 'boolean') config.clipboardSync = patch.clipboardSync;
   if (typeof patch.notifySync === 'boolean') config.notifySync = patch.notifySync;
   if (typeof patch.acceptFiles === 'boolean') config.acceptFiles = patch.acceptFiles;
@@ -666,20 +783,32 @@ ipcMain.handle('set-config', (_e, patch) => {
     if (win && !win.isDestroyed()) win.setBackgroundColor(bgColor());
   }
   saveConfig();
-  if (norm(config.passphrase) !== oldPass) { config.ignored = []; saveConfig(); deriveKey(); closeAll(); addLog('info', 'Pairing code changed', 'Reconnecting…'); }
-  else if (config.name !== oldName) broadcast(helloMsg());
+  if (config.name !== oldName) broadcast(helloMsg());
   if (wantUpd) checkForUpdates(true); // switched on: check right away so the result is visible
   pushState();
   return snapshot();
 });
+// Phone storage as a drive / network location (see storage.js). The phone has to switch sharing on itself.
+ipcMain.handle('storage-mount', async (_e, id) => {
+  const p = peers.get(String(id));
+  if (!p) return { ok: false, error: 'The phone is not connected.' };
+  if (p.info.platform !== 'android') return { ok: false, error: 'Only a phone can share its storage.' };
+  const r = await storage.mount(p.info.id, p.info.name);
+  if (r.ok && r.drive) shell.openPath(r.drive + '\\');
+  else if (r.ok && r.via === 'gio') require('child_process').execFile('gio', ['open', r.dav], () => {});
+  pushState();
+  return r;
+});
+ipcMain.handle('storage-unmount', async (_e, id) => { const ok = await storage.unmount(String(id)); pushState(); return ok; });
 ipcMain.handle('unpair', (_e, id) => unpairDevice(String(id)));
-ipcMain.handle('pair-request', (_e, id) => sendPairRequest(String(id)));
-ipcMain.handle('pair-cancel', (_e, id) => { cancelPair(String(id)); return true; });
-ipcMain.handle('dismiss-pair', () => { pairRequest = null; pushState(); return true; });
+ipcMain.handle('pair-request', (_e, id) => requestPair(String(id)));
+ipcMain.handle('pair-cancel', () => { cancelPair(); return true; });
+ipcMain.handle('pair-accept', () => acceptPair());
+ipcMain.handle('pair-decline', () => { declinePair(); return true; });
 ipcMain.handle('connect-ip', (_e, host) => {
   host = String(host || '').trim();
   if (!/^[A-Za-z0-9.\-]{1,253}$/.test(host)) return false;
-  connectTo(host, WS_PORT);
+  dial(host, WS_PORT, { mode: 'probe' });
   return true;
 });
 ipcMain.handle('send-clipboard', async () => {
@@ -736,18 +865,19 @@ ipcMain.handle('test-notification', () => {
 
 /* ---------- lifecycle ---------- */
 app.on('second-instance', showWindow);
-app.on('before-quit', () => { app.isQuitting = true; });
+app.on('before-quit', () => { app.isQuitting = true; storage.unmountAll().catch(() => {}); });
 app.on('window-all-closed', () => { if (!tray) app.quit(); });
 app.whenReady().then(() => {
   legacy.run(); // remove menu / startup entries and icons left by the previous name
   integrateDesktop();
   Menu.setApplicationMenu(null);
   loadConfig();
-  deriveKey();
+  loadKeys();
   startServer();
   startDiscovery();
   remote.init({ peers, sendTo, getConfig: () => config, addLog });
-  transfer.init({ peers, sendTo, encryptBin, getConfig: () => config, addLog, pushState, getWin: () => win, icon: ICON });
+  storage.init({ peers, sendTo, addLog, pushState });
+  transfer.init({ peers, sendTo, encryptBin: (buf, ws) => pc.sealBytes(ws._key, buf), getConfig: () => config, addLog, pushState, getWin: () => win, icon: ICON });
   createTray();
   createWindow(!(startHidden && tray)); // started by autostart: stay in the tray (but show the window if there is no tray)
   if (config.launchOnStartup) { const r = autostart.set(true, config.startHidden); if (!r.ok) { autostartError = { why: r.why, fix: r.fix }; addLog('warn', 'Launch on startup failed', r.why + ' ' + r.fix); } } // refreshes the path if the app was moved
