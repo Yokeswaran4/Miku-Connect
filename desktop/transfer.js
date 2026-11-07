@@ -179,7 +179,7 @@ async function sendFile(peerId, filePath, rel) {
           await sleep(10);
           if (isFinal(t) || ws.readyState !== WebSocket.OPEN) throw new Error('stopped');
         }
-        ws.send(D.encryptBin(Buffer.concat([head, chunk])));
+        ws.send(D.encryptBin(Buffer.concat([head, chunk]), ws));
         t.done += chunk.length;
         D.pushState();
       }

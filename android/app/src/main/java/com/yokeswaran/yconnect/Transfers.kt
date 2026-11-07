@@ -450,7 +450,7 @@ object Transfers {
                     if (t.finished || !conn.isOpen) throw IllegalStateException("stopped")
                     LockSupport.parkNanos(200_000)
                 }
-                conn.send(Crypto.encryptBytes(Hub.key, buf, 0, 4 + n))
+                conn.send(Crypto.encryptBytes(Hub.keyFor(conn) ?: throw IllegalStateException("stopped"), buf, 0, 4 + n))
                 t.done += n
                 publish()
             }
@@ -603,7 +603,7 @@ object Transfers {
         val raw = ByteArray(bytes.remaining())
         bytes.get(raw)
         val plain = try {
-            Crypto.decryptBytes(Hub.key, raw)
+            Crypto.decryptBytes(Hub.keyFor(conn) ?: return, raw)
         } catch (e: Exception) {
             try { conn.close() } catch (_: Exception) {}
             return
